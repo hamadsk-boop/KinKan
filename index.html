@@ -94,6 +94,13 @@
   .rank.first{border-color:var(--gold);background:rgba(232,199,101,.1);}
   .rank.last{border-color:var(--red);}
   .rank.last .rpts{color:var(--red);}
+  /* editing */
+  .editbtn{background:transparent;border:none;cursor:pointer;font-size:14px;padding:2px 4px;}
+  .edit-banner{background:rgba(90,169,224,.12);border:1px dashed var(--blue);color:var(--blue);
+    border-radius:9px;padding:8px;text-align:center;font-size:13.5px;font-weight:700;margin-bottom:10px;
+    display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
+  .edit-banner button{border:1px solid var(--line);background:transparent;color:var(--muted);
+    border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;}
   /* penalties */
   .pen-chips .chip{font-size:14px;padding:10px 4px;min-width:64px;flex:0 1 auto;}
   .pen-row{display:flex;gap:10px;margin-top:12px;}
@@ -136,15 +143,19 @@
       </table>
     </div>
 
-    <div class="card">
+    <div class="card" id="entryCard">
       <h2>✍️ تسجيل الجولة <span id="roundNo" style="color:var(--muted);font-size:13px;"></span></h2>
+      <div class="edit-banner hidden" id="entryEditBanner">✏️ <span id="entryEditNo"></span>
+        <button id="entryEditCancel">إلغاء</button><button id="entryEditDel">🗑 حذف</button></div>
       <div id="entryRows"></div>
       <div class="err" id="entryErr"></div>
       <button class="btn btn-gold" id="applyBtn">احتساب الجولة</button>
     </div>
 
-    <div class="card">
+    <div class="card" id="penCard">
       <h2>⚖️ غرامة</h2>
+      <div class="edit-banner hidden" id="penEditBanner">✏️ تعديل الغرامة
+        <button id="penEditCancel">إلغاء</button><button id="penEditDel">🗑 حذف</button></div>
       <div class="chips pen-chips" id="penChips"></div>
       <div class="pen-row">
         <input type="number" id="penAmount" inputmode="numeric" min="1" placeholder="مقدار الغرامة">
@@ -241,15 +252,67 @@ $("startBtn").onclick = ()=>{
 };
 
 // ================= شاشة اللعب =================
+let editIdx = null; // فهرس الجولة الجاري تعديلها في state.rounds
+
 function renderGame(){
   renderTotals();
   renderEntry();
   renderPenalty();
-  renderHistory($("histBox"));
+  renderHistory($("histBox"), true);
   const playedRounds = state.rounds.filter(r=>!r.penalty).length;
   $("roundNo").textContent = "(جولة " + (playedRounds+1) + ")";
   $("undoBtn").disabled = state.rounds.length===0;
+  // وضع التعديل: إظهار البطاقة المعنية فقط مع شريط التعديل
+  const editingRound = editIdx!==null && !state.rounds[editIdx].penalty;
+  const editingPen = editIdx!==null && !!state.rounds[editIdx].penalty;
+  $("entryCard").classList.toggle("hidden", editingPen);
+  $("penCard").classList.toggle("hidden", editingRound);
+  $("entryEditBanner").classList.toggle("hidden", !editingRound);
+  $("penEditBanner").classList.toggle("hidden", !editingPen);
+  if(editingRound){
+    const num = state.rounds.slice(0, editIdx+1).filter(r=>!r.penalty).length;
+    $("entryEditNo").textContent = "تعديل الجولة رقم " + num;
+  }
+  $("applyBtn").textContent = editingRound ? "💾 حفظ التعديل" : "احتساب الجولة";
+  $("penBtn").textContent = editingPen ? "💾 حفظ التعديل" : "إضافة";
 }
+
+function recomputeTotals(){
+  state.players.forEach(p=>p.total=0);
+  state.rounds.forEach(r=>r.deltas.forEach((d,i)=>state.players[i].total+=d));
+}
+
+// بعد أي إضافة/تعديل/حذف: إعادة الحساب وتحديد الشاشة المناسبة
+function finishApply(){
+  recomputeTotals();
+  state.finished = state.players.some(p=>p.total>=LIMIT);
+  save();
+  if(state.finished){ renderOver(); show("over"); }
+  else { renderGame(); show("game"); window.scrollTo({top:0, behavior:"smooth"}); }
+}
+
+function startEdit(ri){
+  editIdx = ri;
+  show("game");
+  renderGame();
+  const card = state.rounds[ri].penalty ? $("penCard") : $("entryCard");
+  card.scrollIntoView({behavior:"smooth"});
+}
+
+function cancelEdit(){
+  editIdx = null;
+  if(state.finished){ renderOver(); show("over"); }
+  else renderGame();
+}
+
+$("entryEditCancel").onclick = cancelEdit;
+$("penEditCancel").onclick = cancelEdit;
+$("entryEditDel").onclick = $("penEditDel").onclick = ()=>{
+  if(!confirm("حذف هذا التسجيل نهائياً؟")) return;
+  state.rounds.splice(editIdx,1);
+  editIdx = null;
+  finishApply();
+};
 
 function renderTotals(){
   const tb = $("totalsBody");
@@ -274,8 +337,13 @@ function renderEntry(){
   const box = $("entryRows");
   box.innerHTML = "";
   $("entryErr").textContent = "";
+  const src = (editIdx!==null && !state.rounds[editIdx].penalty) ? state.rounds[editIdx] : null;
   state.players.forEach((p,idx)=>{
-    entry[idx] = {finish:null, down:false, hand:""};
+    entry[idx] = src
+      ? {finish: idx===src.winner ? src.type : null,
+         down: src.down[idx]!=null,
+         hand: src.down[idx]!=null ? String(src.down[idx]) : ""}
+      : {finish:null, down:false, hand:""};
     const row = document.createElement("div");
     row.className = "prow"; row.dataset.idx = idx;
     row.innerHTML = `
@@ -302,6 +370,17 @@ function renderEntry(){
       if(e.target.checked) row.querySelector(".hand-in").focus();
     };
     row.querySelector(".hand-in").oninput = e=>{ entry[idx].hand = e.target.value; };
+    // تعبئة مسبقة عند التعديل
+    const e0 = entry[idx];
+    if(e0.finish){
+      row.classList.add("winner");
+      row.querySelector(`.fbtn[data-f="${e0.finish}"]`).classList.add("sel");
+    }
+    if(e0.down){
+      row.classList.add("down");
+      row.querySelector(".downchk").checked = true;
+      row.querySelector(".hand-in").value = e0.hand;
+    }
     box.appendChild(row);
   });
 }
@@ -342,33 +421,29 @@ $("applyBtn").onclick = ()=>{
     const e = entry[i];
     return e.down ? (+e.hand) * f.mult : f.flat;
   });
-  state.rounds.push({
+  const round = {
     winner:+winIdx, type:f.key, deltas,
     down: state.players.map((_,i)=> i===+winIdx ? null : (entry[i].down ? +entry[i].hand : null))
-  });
-  deltas.forEach((d,i)=> state.players[i].total += d);
-  // هل انتهت اللعبة؟
-  if(state.players.some(p=>p.total>=LIMIT)){
-    state.finished = true;
-    save(); renderOver(); show("over");
-  } else {
-    save(); renderGame();
-    window.scrollTo({top:0, behavior:"smooth"});
-  }
+  };
+  if(editIdx!==null){ state.rounds[editIdx] = round; editIdx = null; }
+  else state.rounds.push(round);
+  finishApply();
 };
 
 // ================= الغرامات =================
 let penPlayer = null;
 
 function renderPenalty(){
-  penPlayer = null;
-  $("penAmount").value = "";
+  const src = (editIdx!==null && state.rounds[editIdx].penalty) ? state.rounds[editIdx] : null;
+  penPlayer = src ? src.deltas.findIndex(d=>d!==0) : null;
+  $("penAmount").value = src ? src.deltas[penPlayer] : "";
   $("penErr").textContent = "";
   const box = $("penChips");
   box.innerHTML = "";
   state.players.forEach((p,i)=>{
     const b = document.createElement("button");
-    b.className = "chip"; b.textContent = p.name;
+    b.className = "chip" + (i===penPlayer ? " active" : "");
+    b.textContent = p.name;
     b.onclick = ()=>{
       penPlayer = penPlayer===i ? null : i;
       [...box.children].forEach((c,ci)=>c.classList.toggle("active", ci===penPlayer));
@@ -383,50 +458,52 @@ $("penBtn").onclick = ()=>{
   const amt = +$("penAmount").value;
   if(!amt || amt<=0){ $("penErr").textContent = "اكتب مقدار الغرامة"; return; }
   const deltas = state.players.map((_,i)=> i===penPlayer ? amt : 0);
-  state.rounds.push({penalty:true, winner:null, type:null, deltas, down:null});
-  state.players[penPlayer].total += amt;
-  if(state.players.some(p=>p.total>=LIMIT)){
-    state.finished = true;
-    save(); renderOver(); show("over");
-  } else {
-    save(); renderGame();
-  }
+  const round = {penalty:true, winner:null, type:null, deltas, down:null};
+  if(editIdx!==null){ state.rounds[editIdx] = round; editIdx = null; }
+  else state.rounds.push(round);
+  finishApply();
 };
 
 $("undoBtn").onclick = ()=>{
   if(!state.rounds.length) return;
   if(!confirm("تراجع عن آخر تسجيل؟")) return;
-  const last = state.rounds.pop();
-  last.deltas.forEach((d,i)=> state.players[i].total -= d);
-  state.finished = false;
-  save(); renderGame();
+  editIdx = null;
+  state.rounds.pop();
+  finishApply();
 };
 
 $("resetBtn").onclick = ()=>{
   if(!confirm("بدء جلسة جديدة؟ سيتم مسح التسجيل الحالي.")) return;
-  state = null;
+  state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
   buildSetup(); buildNameInputs(0); show("setup");
 };
 
 // ================= السجل =================
-function renderHistory(container){
+function renderHistory(container, editable){
   if(!state.rounds.length){ container.innerHTML = '<p class="subnote">لا توجد جولات بعد</p>'; return; }
   let html = '<table><thead><tr><th>#</th>';
   state.players.forEach(p=> html += `<th>${esc(p.name)}</th>`);
   html += '<th>النوع</th></tr></thead><tbody>';
   let roundNum = 0;
-  state.rounds.forEach(r=>{
+  state.rounds.forEach((r,ri)=>{
     html += `<tr><td>${r.penalty ? '⚖️' : ++roundNum}</td>`;
     r.deltas.forEach((d,i)=>{
       const win = i===r.winner;
       const txt = r.penalty && d===0 ? '—' : `${win?'🏆 ':''}${d>0?'+':''}${d}`;
       html += `<td class="${d<0?'neg':'pos'}">${txt}</td>`;
     });
-    html += `<td class="rtype">${r.penalty ? 'غرامة' : ftype(r.type).label}</td></tr>`;
+    const label = r.penalty ? 'غرامة' : ftype(r.type).label;
+    const editBtn = editable ? ` <button class="editbtn" data-ri="${ri}" title="تعديل">✏️</button>` : '';
+    html += `<td class="rtype">${label}${editBtn}</td></tr>`;
   });
   html += '</tbody></table>';
   container.innerHTML = html;
+  if(editable){
+    container.querySelectorAll(".editbtn").forEach(b=>{
+      b.onclick = ()=> startEdit(+b.dataset.ri);
+    });
+  }
 }
 
 // ================= شاشة النهاية =================
@@ -444,17 +521,18 @@ function renderOver(){
       <span class="rpts">${p.total} نقطة</span>`;
     box.appendChild(div);
   });
-  renderHistory($("histBoxOver"));
+  renderHistory($("histBoxOver"), true);
 }
 
 $("rematchBtn").onclick = ()=>{
   state.players.forEach(p=>p.total=0);
   state.rounds = [];
   state.finished = false;
+  editIdx = null;
   save(); renderGame(); show("game");
 };
 $("newSessionBtn").onclick = ()=>{
-  state = null;
+  state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
   buildSetup(); buildNameInputs(0); show("setup");
 };
