@@ -94,6 +94,13 @@
   .rank.first{border-color:var(--gold);background:rgba(232,199,101,.1);}
   .rank.last{border-color:var(--red);}
   .rank.last .rpts{color:var(--red);}
+  /* penalties */
+  .pen-chips .chip{font-size:14px;padding:10px 4px;min-width:64px;flex:0 1 auto;}
+  .pen-row{display:flex;gap:10px;margin-top:12px;}
+  .pen-row input{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2);color:var(--text);font-size:16px;text-align:center;}
+  .pen-row input::placeholder{color:var(--muted);}
+  .pen-row .btn{margin-top:0;width:auto;padding:11px 22px;}
   .hidden{display:none !important;}
   .subnote{color:var(--muted);font-size:12.5px;text-align:center;margin-top:8px;line-height:1.7;}
   .rowbtns{display:flex;gap:10px;}
@@ -137,10 +144,20 @@
     </div>
 
     <div class="card">
+      <h2>⚖️ غرامة</h2>
+      <div class="chips pen-chips" id="penChips"></div>
+      <div class="pen-row">
+        <input type="number" id="penAmount" inputmode="numeric" min="1" placeholder="مقدار الغرامة">
+        <button class="btn btn-gold" id="penBtn">إضافة</button>
+      </div>
+      <div class="err" id="penErr"></div>
+    </div>
+
+    <div class="card">
       <h2>🕘 الجولات السابقة</h2>
       <div class="hist" id="histBox"><p class="subnote">لا توجد جولات بعد</p></div>
       <div class="rowbtns">
-        <button class="btn btn-ghost" id="undoBtn">↩️ تراجع عن آخر جولة</button>
+        <button class="btn btn-ghost" id="undoBtn">↩️ تراجع عن آخر تسجيل</button>
         <button class="btn btn-ghost" id="resetBtn">🔄 جلسة جديدة</button>
       </div>
     </div>
@@ -227,8 +244,10 @@ $("startBtn").onclick = ()=>{
 function renderGame(){
   renderTotals();
   renderEntry();
+  renderPenalty();
   renderHistory($("histBox"));
-  $("roundNo").textContent = "(جولة " + (state.rounds.length+1) + ")";
+  const playedRounds = state.rounds.filter(r=>!r.penalty).length;
+  $("roundNo").textContent = "(جولة " + (playedRounds+1) + ")";
   $("undoBtn").disabled = state.rounds.length===0;
 }
 
@@ -338,9 +357,45 @@ $("applyBtn").onclick = ()=>{
   }
 };
 
+// ================= الغرامات =================
+let penPlayer = null;
+
+function renderPenalty(){
+  penPlayer = null;
+  $("penAmount").value = "";
+  $("penErr").textContent = "";
+  const box = $("penChips");
+  box.innerHTML = "";
+  state.players.forEach((p,i)=>{
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = p.name;
+    b.onclick = ()=>{
+      penPlayer = penPlayer===i ? null : i;
+      [...box.children].forEach((c,ci)=>c.classList.toggle("active", ci===penPlayer));
+      $("penErr").textContent = "";
+    };
+    box.appendChild(b);
+  });
+}
+
+$("penBtn").onclick = ()=>{
+  if(penPlayer===null){ $("penErr").textContent = "اختر اللاعب المُغرَّم"; return; }
+  const amt = +$("penAmount").value;
+  if(!amt || amt<=0){ $("penErr").textContent = "اكتب مقدار الغرامة"; return; }
+  const deltas = state.players.map((_,i)=> i===penPlayer ? amt : 0);
+  state.rounds.push({penalty:true, winner:null, type:null, deltas, down:null});
+  state.players[penPlayer].total += amt;
+  if(state.players.some(p=>p.total>=LIMIT)){
+    state.finished = true;
+    save(); renderOver(); show("over");
+  } else {
+    save(); renderGame();
+  }
+};
+
 $("undoBtn").onclick = ()=>{
   if(!state.rounds.length) return;
-  if(!confirm("تراجع عن آخر جولة؟")) return;
+  if(!confirm("تراجع عن آخر تسجيل؟")) return;
   const last = state.rounds.pop();
   last.deltas.forEach((d,i)=> state.players[i].total -= d);
   state.finished = false;
@@ -360,13 +415,15 @@ function renderHistory(container){
   let html = '<table><thead><tr><th>#</th>';
   state.players.forEach(p=> html += `<th>${esc(p.name)}</th>`);
   html += '<th>النوع</th></tr></thead><tbody>';
-  state.rounds.forEach((r,ri)=>{
-    html += `<tr><td>${ri+1}</td>`;
+  let roundNum = 0;
+  state.rounds.forEach(r=>{
+    html += `<tr><td>${r.penalty ? '⚖️' : ++roundNum}</td>`;
     r.deltas.forEach((d,i)=>{
       const win = i===r.winner;
-      html += `<td class="${d<0?'neg':'pos'}">${win?'🏆 ':''}${d>0?'+':''}${d}</td>`;
+      const txt = r.penalty && d===0 ? '—' : `${win?'🏆 ':''}${d>0?'+':''}${d}`;
+      html += `<td class="${d<0?'neg':'pos'}">${txt}</td>`;
     });
-    html += `<td class="rtype">${ftype(r.type).label}</td></tr>`;
+    html += `<td class="rtype">${r.penalty ? 'غرامة' : ftype(r.type).label}</td></tr>`;
   });
   html += '</tbody></table>';
   container.innerHTML = html;
