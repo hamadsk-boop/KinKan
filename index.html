@@ -126,13 +126,6 @@
     display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
   .edit-banner button{border:1px solid var(--line);background:transparent;color:var(--muted);
     border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;}
-  /* cloud sync */
-  .group-code{display:flex;justify-content:space-between;align-items:center;gap:10px;
-    background:var(--card2);border:1px dashed var(--gold);border-radius:10px;
-    padding:10px 12px;font-weight:800;font-size:18px;letter-spacing:1px;color:var(--gold);}
-  .group-code span{direction:ltr;}
-  .group-code button{border:1px solid var(--line);background:transparent;color:var(--muted);
-    border-radius:7px;padding:5px 10px;cursor:pointer;font-size:12.5px;white-space:nowrap;}
   /* penalties */
   .pen-chips .chip{font-size:14px;padding:10px 4px;min-width:64px;flex:0 1 auto;}
   .pen-row{display:flex;gap:10px;margin-top:12px;}
@@ -151,6 +144,7 @@
   <header>
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
+    <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -185,33 +179,6 @@
       <div id="recentList"></div>
     </div>
 
-    <div class="card">
-      <h2>☁️ المزامنة السحابية</h2>
-      <div id="cloudOff">
-        <p class="subnote" style="text-align:right;">اربط أجهزة الشلة برمز واحد وتتزامن ملفات اللاعبين والإحصائيات لحظياً بين الجميع.</p>
-        <button class="btn btn-gold" id="createGroupBtn">✨ إنشاء مجموعة جديدة</button>
-        <div class="pen-row" style="margin-top:10px;">
-          <input type="text" id="joinCode" placeholder="أدخل رمز مجموعة موجود" style="direction:ltr;text-align:center;" autocapitalize="characters">
-          <button class="btn btn-ghost" id="joinGroupBtn" style="margin-top:0;">انضمام</button>
-        </div>
-      </div>
-      <div id="cloudOn" class="hidden">
-        <div class="group-code"><button id="copyCodeBtn">📋 نسخ</button><span id="groupCodeTxt"></span></div>
-        <p class="subnote"><span id="cloudStatus">⏳ جاري الاتصال…</span></p>
-        <button class="btn btn-ghost" id="unlinkBtn">🔌 فك ربط هذا الجهاز</button>
-      </div>
-      <div class="err" id="cloudErr"></div>
-    </div>
-
-    <div class="card">
-      <h2>💾 النسخ الاحتياطي</h2>
-      <p class="subnote" style="text-align:right;">بياناتك (اللاعبون والإحصائيات) محفوظة على هذا الجهاز وتبقى تلقائياً. للاحتياط الإضافي أو نقلها لجهاز آخر:</p>
-      <div class="rowbtns">
-        <button class="btn btn-ghost" id="exportBtn">⬇️ حفظ نسخة</button>
-        <button class="btn btn-ghost" id="importBtn">⬆️ استرجاع نسخة</button>
-      </div>
-      <input type="file" id="importFile" accept=".json,application/json" class="hidden">
-    </div>
   </section>
 
   <!-- ========== شاشة اللعب ========== -->
@@ -416,7 +383,7 @@ $("startBtn").onclick = ()=>{
     players: pids.map(pid=>({pid, name: profName(pid), total:0})),
     rounds:[], finished:false, gameId: uid()
   };
-  save(); renderGame(); show("game");
+  save(); cloudPush(); renderGame(); show("game");
 };
 
 // استرجاع آخر مجموعة لعبت تلقائياً عند فتح التطبيق
@@ -525,8 +492,8 @@ function renderSetup(){
   checkStart();
 }
 
-// ================= المزامنة السحابية =================
-const GROUP_KEY = "kinkan-group-v1";
+// ================= قاعدة البيانات الدائمة (Firebase) =================
+const DB_PATH = "groups/estraha"; // قاعدة موحدة ثابتة لاستراحة واحدة
 const FB_CONFIG = {
   apiKey: "AIzaSyC2eaFRq0FmD-WaOz56RzekQZbvtjIGkwc",
   authDomain: "kinkan-1ee5a.firebaseapp.com",
@@ -536,39 +503,57 @@ const FB_CONFIG = {
   messagingSenderId: "952954580308",
   appId: "1:952954580308:web:6f59d4d785ecb08e2a2cc1"
 };
-const cloud = { code: localStorage.getItem(GROUP_KEY) || "", db:null, fns:null, ready:false, firstSync:true };
+const cloud = { db:null, fns:null, ready:false, firstSync:true };
 
-function groupCodeGen(){
-  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // بدون حروف ملتبسة
-  let s = "";
-  for(let i=0;i<8;i++){ s += A[Math.floor(Math.random()*A.length)]; if(i===3) s += "-"; }
-  return s;
-}
-function setCloudStatus(t){ const el=$("cloudStatus"); if(el) el.textContent = t; }
-function renderCloud(){
-  $("cloudOff").classList.toggle("hidden", !!cloud.code);
-  $("cloudOn").classList.toggle("hidden", !cloud.code);
-  if(cloud.code) $("groupCodeTxt").textContent = cloud.code;
-}
+function setCloudStatus(t){ const el=$("dbStatus"); if(el) el.textContent = t; }
 function arrFromObj(o){ return o ? Object.values(o) : []; }
 function objBy(arr, k){ const o={}; arr.forEach(x=>{ if(x && x[k]) o[x[k]]=x; }); return o; }
 
 function cloudPush(){
   if(!cloud.ready) return;
   const {ref, set} = cloud.fns;
-  set(ref(cloud.db, "groups/"+cloud.code), {
+  set(ref(cloud.db, DB_PATH), {
     profiles: objBy(profiles, "id"),
     games: objBy(games, "id"),
+    session: state,
     updated: new Date().toISOString()
   }).catch(()=>{});
+}
+
+// Firebase يحذف المصفوفات الفارغة والقيم null — نعيد بناءها عند الاستقبال
+function normSession(st){
+  if(!st) return null;
+  st.players = Array.isArray(st.players) ? st.players : Object.values(st.players||{});
+  if(!st.players.length) return null;
+  st.rounds = st.rounds ? (Array.isArray(st.rounds) ? st.rounds : Object.values(st.rounds)) : [];
+  st.finished = !!st.finished;
+  st.rounds.forEach(r=>{
+    r.deltas = Array.isArray(r.deltas) ? r.deltas : Object.values(r.deltas||{});
+    if(r.winner===undefined) r.winner = null;
+    if(r.type===undefined) r.type = null;
+    r.penalty = !!r.penalty;
+    const d = [];
+    for(let i=0;i<st.players.length;i++){
+      d[i] = (r.down && r.down[i]!==undefined && r.down[i]!==null) ? r.down[i] : null;
+    }
+    r.down = d;
+  });
+  return st;
+}
+
+function showForState(){
+  if(state && !state.finished){ renderGame(); show("game"); }
+  else if(state && state.finished){ renderOver(); show("over"); }
+  else { renderSetup(); show("setup"); }
 }
 
 function handleRemote(v){
   const rp = arrFromObj(v.profiles);
   const rg = arrFromObj(v.games);
+  const rs = normSession(v.session || null);
   if(cloud.firstSync){
     cloud.firstSync = false;
-    // توحيد المعرفات: نفس الاسم في السحابة = نفس اللاعب المحلي
+    // توحيد المعرفات: نفس الاسم في القاعدة = نفس اللاعب المحلي
     const byName = {};
     rp.forEach(p=>{ byName[p.name] = p; });
     profiles.forEach(p=>{
@@ -584,20 +569,28 @@ function handleRemote(v){
     rp.forEach(p=>{ if(!profiles.some(x=>x.id===p.id)) profiles.push(p); });
     rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
     saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
-    if(state) save();
-    cloudPush(); // ارفع نتيجة الدمج للسحابة
-  } else {
-    // بعد أول مزامنة: السحابة هي المصدر الموحّد
-    profiles = rp; games = rg;
-    saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+    // الجلسة: المحلية الجارية لها الأولوية، وإلا نتبنى جلسة القاعدة
+    if(!state && rs){ state = rs; save(); showForState(); }
+    else if(state) save();
+    cloudPush(); // ارفع نتيجة الدمج للقاعدة
+    if(!$("setup").classList.contains("hidden")) renderSetup();
+    return;
   }
-  if(!$("setup").classList.contains("hidden")) renderSetup();
+  // بعد أول مزامنة: القاعدة هي المصدر الدائم للجميع
+  profiles = rp; games = rg;
+  saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  if(JSON.stringify(rs) !== JSON.stringify(state)){
+    state = rs;
+    editIdx = null;
+    if(state) save(); else localStorage.removeItem(STORE_KEY);
+    showForState();
+  } else if(!$("setup").classList.contains("hidden")){
+    renderSetup();
+  }
 }
 
 async function initCloud(){
-  renderCloud();
-  if(!cloud.code) return;
-  setCloudStatus("⏳ جاري الاتصال…");
+  setCloudStatus("⏳ جاري الاتصال بقاعدة البيانات…");
   try{
     const [appM, dbM] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
@@ -608,75 +601,16 @@ async function initCloud(){
     cloud.fns = dbM;
     cloud.ready = true;
     dbM.onValue(dbM.ref(cloud.db, ".info/connected"), s=>{
-      setCloudStatus(s.val() ? "🟢 متصل — المزامنة شغالة" : "🟡 بدون اتصال — بيتزامن أول ما ترجع الشبكة");
+      setCloudStatus(s.val() ? "🟢 قاعدة البيانات متصلة — كل شيء محفوظ دائم"
+                             : "🟡 بدون اتصال — بيُحفظ أول ما ترجع الشبكة");
     });
-    dbM.onValue(dbM.ref(cloud.db, "groups/"+cloud.code), snap=>{
+    dbM.onValue(dbM.ref(cloud.db, DB_PATH), snap=>{
       handleRemote(snap.val() || {});
     });
   }catch(e){
-    setCloudStatus("⚠️ تعذر تحميل المزامنة — بيعيد المحاولة عند فتح التطبيق القادم");
+    setCloudStatus("⚠️ تعذر الاتصال — شغال محلياً وبيتصل عند إعادة الفتح");
   }
 }
-
-$("createGroupBtn").onclick = ()=>{
-  cloud.code = groupCodeGen();
-  localStorage.setItem(GROUP_KEY, cloud.code);
-  location.reload();
-};
-$("joinGroupBtn").onclick = ()=>{
-  const c = $("joinCode").value.trim().toUpperCase();
-  if(!/^[A-Z0-9-]{6,20}$/.test(c)){ $("cloudErr").textContent = "الرمز غير صالح — تأكد منه"; return; }
-  localStorage.setItem(GROUP_KEY, c);
-  location.reload();
-};
-$("unlinkBtn").onclick = ()=>{
-  if(!confirm("فك ربط هذا الجهاز عن المجموعة؟ (بياناتك المحلية تبقى كما هي)")) return;
-  localStorage.removeItem(GROUP_KEY);
-  location.reload();
-};
-$("copyCodeBtn").onclick = ()=>{
-  const done = ()=>{ $("copyCodeBtn").textContent="✅ تم"; setTimeout(()=>$("copyCodeBtn").textContent="📋 نسخ",1200); };
-  if(navigator.clipboard) navigator.clipboard.writeText(cloud.code).then(done).catch(()=>prompt("انسخ الرمز:", cloud.code));
-  else prompt("انسخ الرمز:", cloud.code);
-};
-
-// ================= النسخ الاحتياطي =================
-$("exportBtn").onclick = ()=>{
-  const data = {app:"kinkan", v:1, exported:new Date().toISOString(),
-    profiles, games, session: load(), lastSetup: loadJSON(LAST_KEY, null)};
-  const blob = new Blob([JSON.stringify(data, null, 1)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "kinkan-backup-" + new Date().toISOString().slice(0,10) + ".json";
-  a.click();
-  URL.revokeObjectURL(a.href);
-};
-$("importBtn").onclick = ()=> $("importFile").click();
-$("importFile").onchange = e=>{
-  const f = e.target.files[0];
-  if(!f) return;
-  const rd = new FileReader();
-  rd.onload = ()=>{
-    try{
-      const d = JSON.parse(rd.result);
-      if(d.app!=="kinkan") throw new Error("bad file");
-      // دمج بدون تكرار: الملفات بالمعرف أو الاسم، والألعاب بالمعرف
-      (d.profiles||[]).forEach(p=>{
-        if(p && p.id && p.name && !profiles.some(x=>x.id===p.id || x.name===p.name)) profiles.push(p);
-      });
-      (d.games||[]).forEach(g=>{
-        if(g && g.id && !games.some(x=>x.id===g.id)) games.push(g);
-      });
-      saveJSON(PROF_KEY, profiles);
-      saveJSON(GAMES_KEY, games);
-      cloudPush();
-      renderSetup();
-      alert("تم الاسترجاع والدمج بنجاح ✅");
-    }catch(_){ alert("الملف غير صالح ❌"); }
-  };
-  rd.readAsText(f);
-  e.target.value = "";
-};
 
 // ================= شاشة اللعب =================
 let editIdx = null; // فهرس الجولة الجاري تعديلها في state.rounds
@@ -906,6 +840,7 @@ $("resetBtn").onclick = ()=>{
   if(!confirm("بدء جلسة جديدة؟ سيتم مسح التسجيل الحالي.")) return;
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
+  cloudPush();
   renderSetup(); show("setup");
 };
 
@@ -960,11 +895,12 @@ $("rematchBtn").onclick = ()=>{
   state.finished = false;
   state.gameId = uid(); // لعبة جديدة بأرشيف مستقل
   editIdx = null;
-  save(); renderGame(); show("game");
+  save(); cloudPush(); renderGame(); show("game");
 };
 $("newSessionBtn").onclick = ()=>{
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
+  cloudPush();
   renderSetup(); show("setup");
 };
 
