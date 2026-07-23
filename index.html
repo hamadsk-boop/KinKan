@@ -94,6 +94,25 @@
   .rank.first{border-color:var(--gold);background:rgba(232,199,101,.1);}
   .rank.last{border-color:var(--red);}
   .rank.last .rpts{color:var(--red);}
+  /* profiles */
+  .prof-list{display:flex;gap:8px;flex-wrap:wrap;}
+  .prof{display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-weight:700;font-size:14.5px;}
+  .prof button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;}
+  .names select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2);color:var(--text);font-size:16px;appearance:none;}
+  .names select:invalid, .names select.empty{color:var(--muted);}
+  /* dashboard */
+  .hl-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+  .hl{flex:1;min-width:145px;background:var(--card2);border:1px solid var(--line);
+    border-radius:12px;padding:10px;text-align:center;}
+  .hl .t{font-size:11.5px;color:var(--muted);}
+  .hl .v{font-size:15px;font-weight:800;color:var(--gold);margin-top:4px;}
+  .hl .s{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .recent{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;margin-top:8px;font-size:13.5px;flex-wrap:wrap;}
+  .recent .rd{color:var(--muted);font-size:11.5px;width:100%;}
   /* editing */
   .editbtn{background:transparent;border:none;cursor:pointer;font-size:14px;padding:2px 4px;}
   .edit-banner{background:rgba(90,169,224,.12);border:1px dashed var(--blue);color:var(--blue);
@@ -124,12 +143,33 @@
   <!-- ========== شاشة الإعداد ========== -->
   <section id="setup">
     <div class="card">
-      <h2>كم عدد اللاعبين؟</h2>
+      <h2>🎮 جلسة جديدة — كم عدد اللاعبين؟</h2>
       <div class="chips" id="countChips"></div>
-      <div class="names" id="nameInputs"></div>
+      <div class="names" id="playerSelects"></div>
       <button class="btn btn-gold" id="startBtn" disabled>ابدأ الجلسة</button>
       <p class="subnote">الخصومات: كنكان −٣٠ · دبل −٦٠ · دبل لون −١٢٠ · دبل زات −٢٤٠<br>
       على الباقين: كنكان ١٠٠ · دبل ٢٠٠ · دبل لون ٤٠٠ · دبل زات ٨٠٠ (ومن نزل يُحسب ما بيده × المضاعف)</p>
+    </div>
+
+    <div class="card">
+      <h2>👥 ملفات اللاعبين</h2>
+      <div class="prof-list" id="profList"><p class="subnote">لا يوجد لاعبون بعد — أضف أول لاعب 👇</p></div>
+      <div class="pen-row">
+        <input type="text" id="newProfName" maxlength="20" placeholder="اسم اللاعب الجديد">
+        <button class="btn btn-gold" id="addProfBtn">➕ إضافة</button>
+      </div>
+      <div class="err" id="profErr"></div>
+    </div>
+
+    <div class="card hidden" id="statsCard">
+      <h2>📊 لوحة الأبطال <span id="gamesCount" style="color:var(--muted);font-size:13px;"></span></h2>
+      <div class="hl-row" id="highlights"></div>
+      <div class="hist" id="statsBox"></div>
+    </div>
+
+    <div class="card hidden" id="recentCard">
+      <h2>🕹️ آخر الألعاب</h2>
+      <div id="recentList"></div>
     </div>
   </section>
 
@@ -202,54 +242,232 @@ const FINISH_TYPES = [
 ];
 const LIMIT = 2000;
 const STORE_KEY = "kinkan-session-v1";
+const PROF_KEY = "kinkan-profiles-v1";
+const GAMES_KEY = "kinkan-games-v1";
 
 // ================= الحالة =================
-let state = null; // {players:[{name,total}], rounds:[...], finished:bool}
+let state = null; // {players:[{pid,name,total}], rounds:[...], finished:bool, gameId}
 let selectedCount = 0;
+let profiles = loadJSON(PROF_KEY, []); // [{id,name}]
+let games = loadJSON(GAMES_KEY, []);   // أرشيف الألعاب المنتهية
 
 // ================= أدوات =================
 const $ = id => document.getElementById(id);
 const ftype = key => FINISH_TYPES.find(f=>f.key===key);
 function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){} }
 function load(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)); }catch(e){ return null; } }
+function loadJSON(k, def){ try{ return JSON.parse(localStorage.getItem(k)) || def; }catch(e){ return def; } }
+function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function show(id){ ["setup","game","over"].forEach(s=>$(s).classList.toggle("hidden", s!==id)); }
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
 
+// ================= ملفات اللاعبين =================
+function profName(pid){ const p = profiles.find(p=>p.id===pid); return p ? p.name : "؟"; }
+
+function addProfile(name){
+  name = (name||"").trim();
+  if(!name) return null;
+  if(profiles.some(p=>p.name===name)){
+    $("profErr").textContent = "الاسم موجود من قبل";
+    return profiles.find(p=>p.name===name);
+  }
+  const p = {id: uid(), name};
+  profiles.push(p);
+  saveJSON(PROF_KEY, profiles);
+  renderProfiles();
+  return p;
+}
+
+$("addProfBtn").onclick = ()=>{
+  $("profErr").textContent = "";
+  const name = $("newProfName").value.trim();
+  if(!name){ $("profErr").textContent = "اكتب اسم اللاعب"; return; }
+  if(profiles.some(p=>p.name===name)){ $("profErr").textContent = "الاسم موجود من قبل"; return; }
+  addProfile(name);
+  $("newProfName").value = "";
+  buildPlayerSelects(selectedCount);
+};
+$("newProfName").onkeydown = e=>{ if(e.key==="Enter") $("addProfBtn").click(); };
+
+function renderProfiles(){
+  const box = $("profList");
+  if(!profiles.length){
+    box.innerHTML = '<p class="subnote">لا يوجد لاعبون بعد — أضف أول لاعب 👇</p>';
+    return;
+  }
+  box.innerHTML = "";
+  profiles.forEach(p=>{
+    const d = document.createElement("div");
+    d.className = "prof";
+    d.innerHTML = `<span>👤 ${esc(p.name)}</span><button title="حذف">✕</button>`;
+    d.querySelector("button").onclick = ()=>{
+      if(!confirm(`حذف اللاعب "${p.name}" من القائمة؟ (سجله التاريخي يبقى في الإحصائيات)`)) return;
+      profiles = profiles.filter(x=>x.id!==p.id);
+      saveJSON(PROF_KEY, profiles);
+      renderProfiles();
+      buildPlayerSelects(selectedCount);
+    };
+    box.appendChild(d);
+  });
+}
+
 // ================= شاشة الإعداد =================
+let selPids = []; // اختيارات الخانات الحالية
+
 function buildSetup(){
   const chips = $("countChips");
   chips.innerHTML = "";
   [2,3,4,5,6,7,8].forEach(n=>{
     const b = document.createElement("button");
     b.className = "chip"; b.textContent = n;
-    b.onclick = ()=>{ selectedCount = n; buildNameInputs(n);
+    b.onclick = ()=>{ selectedCount = n;
+      selPids = selPids.slice(0,n);
+      buildPlayerSelects(n);
       [...chips.children].forEach(c=>c.classList.toggle("active", +c.textContent===n)); };
     chips.appendChild(b);
   });
 }
-function buildNameInputs(n){
-  const box = $("nameInputs");
-  const old = [...box.querySelectorAll("input")].map(i=>i.value);
+
+function buildPlayerSelects(n){
+  const box = $("playerSelects");
   box.innerHTML = "";
+  while(selPids.length<n) selPids.push(null);
   for(let i=0;i<n;i++){
-    const inp = document.createElement("input");
-    inp.placeholder = "اسم اللاعب " + (i+1);
-    inp.value = old[i] || "";
-    inp.maxLength = 20;
-    inp.oninput = checkStart;
-    box.appendChild(inp);
+    // نظف أي اختيار لملف محذوف
+    if(selPids[i] && !profiles.some(p=>p.id===selPids[i])) selPids[i]=null;
+    const sel = document.createElement("select");
+    sel.className = selPids[i] ? "" : "empty";
+    let html = `<option value="">— اللاعب ${i+1} —</option>`;
+    profiles.forEach(p=>{
+      // منطق المجموعة: المختار في خانة لا يظهر في غيرها
+      const takenElsewhere = selPids.some((pid,j)=> j!==i && pid===p.id);
+      if(!takenElsewhere) html += `<option value="${p.id}" ${selPids[i]===p.id?"selected":""}>${esc(p.name)}</option>`;
+    });
+    html += `<option value="__new__">➕ إضافة لاعب جديد</option>`;
+    sel.innerHTML = html;
+    sel.onchange = ()=>{
+      if(sel.value==="__new__"){
+        const name = prompt("اسم اللاعب الجديد:");
+        const p = name && name.trim() ? addProfile(name) : null;
+        selPids[i] = p ? p.id : null;
+      } else {
+        selPids[i] = sel.value || null;
+      }
+      buildPlayerSelects(n); // إعادة البناء لتطبيق منطق المجموعة
+    };
+    box.appendChild(sel);
   }
   checkStart();
 }
+
 function checkStart(){
-  const inputs = [...$("nameInputs").querySelectorAll("input")];
-  $("startBtn").disabled = !(inputs.length>=2 && inputs.every(i=>i.value.trim()));
+  $("startBtn").disabled = !(selectedCount>=2 && selPids.slice(0,selectedCount).every(pid=>pid));
 }
+
 $("startBtn").onclick = ()=>{
-  const names = [...$("nameInputs").querySelectorAll("input")].map(i=>i.value.trim());
-  state = { players: names.map(n=>({name:n,total:0})), rounds:[], finished:false };
+  const pids = selPids.slice(0,selectedCount);
+  state = {
+    players: pids.map(pid=>({pid, name: profName(pid), total:0})),
+    rounds:[], finished:false, gameId: uid()
+  };
   save(); renderGame(); show("game");
 };
+
+// ================= أرشيف الألعاب =================
+function archiveGame(){
+  if(!state.gameId) state.gameId = uid();
+  // مطابقة اللاعبين القدامى (جلسات ما قبل الملفات) بالاسم أو إنشاء ملف لهم
+  state.players.forEach(p=>{
+    if(!p.pid){
+      const m = profiles.find(x=>x.name===p.name) || addProfile(p.name);
+      p.pid = m ? m.id : null;
+    }
+  });
+  const sorted = [...state.players].sort((a,b)=>a.total-b.total);
+  const rec = {
+    id: state.gameId,
+    date: new Date().toISOString(),
+    rounds: state.rounds.filter(r=>!r.penalty).length,
+    players: state.players.map(p=>({
+      pid: p.pid || null, name: p.name, total: p.total,
+      rank: sorted.indexOf(p)+1
+    }))
+  };
+  games = games.filter(g=>g.id!==rec.id);
+  games.push(rec);
+  saveJSON(GAMES_KEY, games);
+}
+function unarchiveGame(){
+  if(!state || !state.gameId) return;
+  const before = games.length;
+  games = games.filter(g=>g.id!==state.gameId);
+  if(games.length!==before) saveJSON(GAMES_KEY, games);
+}
+
+// ================= لوحة الإحصائيات =================
+function renderDashboard(){
+  const has = games.length>0;
+  $("statsCard").classList.toggle("hidden", !has);
+  $("recentCard").classList.toggle("hidden", !has);
+  if(!has) return;
+  $("gamesCount").textContent = `(${games.length} لعبة)`;
+  // تجميع الإحصائيات لكل لاعب
+  const st = {};
+  games.forEach(g=>{
+    g.players.forEach(pl=>{
+      const key = pl.pid || "n:"+pl.name;
+      if(!st[key]) st[key] = {name:pl.name, played:0, wins:0, lasts:0, pts:0, best:Infinity};
+      const s = st[key];
+      s.name = pl.name;
+      s.played++; s.pts += pl.total;
+      if(pl.rank===1) s.wins++;
+      if(pl.rank===g.players.length) s.lasts++;
+      if(pl.total < s.best) s.best = pl.total;
+    });
+  });
+  const list = Object.values(st);
+  // أبرز الأرقام
+  const most = (arr, f)=> arr.reduce((a,b)=> f(b)>f(a)?b:a);
+  const champ = most(list, s=>s.wins);
+  const goat  = most(list, s=>s.lasts);
+  const sniper = list.reduce((a,b)=> (b.pts/b.played)<(a.pts/a.played)?b:a);
+  const hls = [];
+  if(champ.wins>0) hls.push({t:"👑 وحش الطاولة", v:champ.name, s:`${champ.wins} فوز`});
+  if(goat.lasts>0) hls.push({t:"💀 حبيب الألفينات", v:goat.name, s:`${goat.lasts} مرة أخير`});
+  hls.push({t:"🎯 أهدأ يد (أقل متوسط)", v:sniper.name, s:`${Math.round(sniper.pts/sniper.played)} نقطة/لعبة`});
+  $("highlights").innerHTML = hls.map(h=>
+    `<div class="hl"><div class="t">${h.t}</div><div class="v">${esc(h.v)}</div><div class="s">${h.s}</div></div>`).join("");
+  // جدول الترتيب: الأكثر فوزاً ثم الأقل متوسطاً
+  list.sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played));
+  let html = `<table><thead><tr><th style="text-align:right">اللاعب</th><th>لعب</th><th>🥇</th><th>💀</th><th>% فوز</th><th>متوسط</th></tr></thead><tbody>`;
+  list.forEach(s=>{
+    html += `<tr><td class="name">${esc(s.name)}</td><td>${s.played}</td>
+      <td class="leader">${s.wins}</td><td class="danger">${s.lasts}</td>
+      <td>${Math.round(s.wins/s.played*100)}%</td><td>${Math.round(s.pts/s.played)}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  $("statsBox").innerHTML = html;
+  // آخر الألعاب
+  const recent = [...games].sort((a,b)=> b.date.localeCompare(a.date)).slice(0,5);
+  $("recentList").innerHTML = recent.map(g=>{
+    const w = g.players.find(p=>p.rank===1);
+    const l = g.players.find(p=>p.rank===g.players.length);
+    const d = new Date(g.date);
+    const ds = d.toLocaleDateString("ar-SA",{day:"numeric",month:"short"}) + " " +
+               d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+    return `<div class="recent"><span class="rd">📅 ${ds} · ${g.players.length} لاعبين · ${g.rounds} جولة</span>
+      <span class="leader">🥇 ${esc(w.name)} (${w.total})</span>
+      <span class="danger">💀 ${esc(l.name)} (${l.total})</span></div>`;
+  }).join("");
+}
+
+function renderSetup(){
+  renderProfiles();
+  buildPlayerSelects(selectedCount);
+  renderDashboard();
+  checkStart();
+}
 
 // ================= شاشة اللعب =================
 let editIdx = null; // فهرس الجولة الجاري تعديلها في state.rounds
@@ -286,6 +504,8 @@ function recomputeTotals(){
 function finishApply(){
   recomputeTotals();
   state.finished = state.players.some(p=>p.total>=LIMIT);
+  if(state.finished) archiveGame();  // تسجيل اللعبة في الأرشيف
+  else unarchiveGame();              // تعديل ألغى النهاية → إزالة من الأرشيف
   save();
   if(state.finished){ renderOver(); show("over"); }
   else { renderGame(); show("game"); window.scrollTo({top:0, behavior:"smooth"}); }
@@ -476,7 +696,7 @@ $("resetBtn").onclick = ()=>{
   if(!confirm("بدء جلسة جديدة؟ سيتم مسح التسجيل الحالي.")) return;
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
-  buildSetup(); buildNameInputs(0); show("setup");
+  renderSetup(); show("setup");
 };
 
 // ================= السجل =================
@@ -528,13 +748,14 @@ $("rematchBtn").onclick = ()=>{
   state.players.forEach(p=>p.total=0);
   state.rounds = [];
   state.finished = false;
+  state.gameId = uid(); // لعبة جديدة بأرشيف مستقل
   editIdx = null;
   save(); renderGame(); show("game");
 };
 $("newSessionBtn").onclick = ()=>{
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
-  buildSetup(); buildNameInputs(0); show("setup");
+  renderSetup(); show("setup");
 };
 
 // ================= بدء التشغيل =================
@@ -545,7 +766,7 @@ if(saved && saved.players && saved.players.length){
   if(state.finished){ renderOver(); show("over"); }
   else { renderGame(); show("game"); }
 } else {
-  show("setup");
+  renderSetup(); show("setup");
 }
 </script>
 </body>
