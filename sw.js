@@ -1,5 +1,5 @@
-// كنكان — Service Worker: تشغيل بدون إنترنت وحماية بيانات التطبيق
-const CACHE = "kinkan-v2";
+// كنكان — Service Worker: تشغيل بدون إنترنت مع ضمان وصول التحديثات فوراً
+const CACHE = "kinkan-v3";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -15,11 +15,12 @@ self.addEventListener("activate", e => {
   );
 });
 
-// الشبكة أولاً (حتى تصل التحديثات فوراً) ثم الكاش عند انقطاع الإنترنت
+// الشبكة أولاً مع تجاوز ذاكرة المتصفح المؤقتة (cache:"reload")،
+// حتى لا يخدمنا HTTP cache نسخة قديمة؛ وعند انقطاع الإنترنت نرجع للكاش.
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "reload" })
       .then(r => {
         const cp = r.clone();
         caches.open(CACHE).then(c => c.put(e.request, cp));

@@ -165,6 +165,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٣</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1127,8 +1128,22 @@ initCloud();
 
 // حماية التخزين + التطبيق القابل للتثبيت
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
-if("serviceWorker" in navigator && location.protocol!=="file:")
-  navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator && location.protocol!=="file:"){
+  navigator.serviceWorker.register("sw.js").then(reg=>{
+    reg.update();
+    // عند تفعيل نسخة جديدة من العامل، أعد التحميل مرة واحدة لعرض التحديث فوراً
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+      if(reloaded) return; reloaded = true; location.reload();
+    });
+    reg.addEventListener("updatefound", ()=>{
+      const nw = reg.installing;
+      if(nw) nw.addEventListener("statechange", ()=>{
+        if(nw.state==="installed" && navigator.serviceWorker.controller) nw.postMessage&&nw.postMessage("skip");
+      });
+    });
+  }).catch(()=>{});
+}
 </script>
 </body>
 </html>
