@@ -126,6 +126,13 @@
     display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
   .edit-banner button{border:1px solid var(--line);background:transparent;color:var(--muted);
     border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;}
+  /* cloud sync */
+  .group-code{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    background:var(--card2);border:1px dashed var(--gold);border-radius:10px;
+    padding:10px 12px;font-weight:800;font-size:18px;letter-spacing:1px;color:var(--gold);}
+  .group-code span{direction:ltr;}
+  .group-code button{border:1px solid var(--line);background:transparent;color:var(--muted);
+    border-radius:7px;padding:5px 10px;cursor:pointer;font-size:12.5px;white-space:nowrap;}
   /* penalties */
   .pen-chips .chip{font-size:14px;padding:10px 4px;min-width:64px;flex:0 1 auto;}
   .pen-row{display:flex;gap:10px;margin-top:12px;}
@@ -176,6 +183,24 @@
     <div class="card hidden" id="recentCard">
       <h2>🕹️ آخر الألعاب</h2>
       <div id="recentList"></div>
+    </div>
+
+    <div class="card">
+      <h2>☁️ المزامنة السحابية</h2>
+      <div id="cloudOff">
+        <p class="subnote" style="text-align:right;">اربط أجهزة الشلة برمز واحد وتتزامن ملفات اللاعبين والإحصائيات لحظياً بين الجميع.</p>
+        <button class="btn btn-gold" id="createGroupBtn">✨ إنشاء مجموعة جديدة</button>
+        <div class="pen-row" style="margin-top:10px;">
+          <input type="text" id="joinCode" placeholder="أدخل رمز مجموعة موجود" style="direction:ltr;text-align:center;" autocapitalize="characters">
+          <button class="btn btn-ghost" id="joinGroupBtn" style="margin-top:0;">انضمام</button>
+        </div>
+      </div>
+      <div id="cloudOn" class="hidden">
+        <div class="group-code"><button id="copyCodeBtn">📋 نسخ</button><span id="groupCodeTxt"></span></div>
+        <p class="subnote"><span id="cloudStatus">⏳ جاري الاتصال…</span></p>
+        <button class="btn btn-ghost" id="unlinkBtn">🔌 فك ربط هذا الجهاز</button>
+      </div>
+      <div class="err" id="cloudErr"></div>
     </div>
 
     <div class="card">
@@ -293,6 +318,7 @@ function addProfile(name){
   profiles.push(p);
   saveJSON(PROF_KEY, profiles);
   renderProfiles();
+  cloudPush();
   return p;
 }
 
@@ -322,6 +348,7 @@ function renderProfiles(){
       if(!confirm(`حذف اللاعب "${p.name}" من القائمة؟ (سجله التاريخي يبقى في الإحصائيات)`)) return;
       profiles = profiles.filter(x=>x.id!==p.id);
       saveJSON(PROF_KEY, profiles);
+      cloudPush();
       renderProfiles();
       buildPlayerSelects(selectedCount);
     };
@@ -498,6 +525,121 @@ function renderSetup(){
   checkStart();
 }
 
+// ================= المزامنة السحابية =================
+const GROUP_KEY = "kinkan-group-v1";
+const FB_CONFIG = {
+  apiKey: "AIzaSyC2eaFRq0FmD-WaOz56RzekQZbvtjIGkwc",
+  authDomain: "kinkan-1ee5a.firebaseapp.com",
+  databaseURL: "https://kinkan-1ee5a-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "kinkan-1ee5a",
+  storageBucket: "kinkan-1ee5a.firebasestorage.app",
+  messagingSenderId: "952954580308",
+  appId: "1:952954580308:web:6f59d4d785ecb08e2a2cc1"
+};
+const cloud = { code: localStorage.getItem(GROUP_KEY) || "", db:null, fns:null, ready:false, firstSync:true };
+
+function groupCodeGen(){
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // بدون حروف ملتبسة
+  let s = "";
+  for(let i=0;i<8;i++){ s += A[Math.floor(Math.random()*A.length)]; if(i===3) s += "-"; }
+  return s;
+}
+function setCloudStatus(t){ const el=$("cloudStatus"); if(el) el.textContent = t; }
+function renderCloud(){
+  $("cloudOff").classList.toggle("hidden", !!cloud.code);
+  $("cloudOn").classList.toggle("hidden", !cloud.code);
+  if(cloud.code) $("groupCodeTxt").textContent = cloud.code;
+}
+function arrFromObj(o){ return o ? Object.values(o) : []; }
+function objBy(arr, k){ const o={}; arr.forEach(x=>{ if(x && x[k]) o[x[k]]=x; }); return o; }
+
+function cloudPush(){
+  if(!cloud.ready) return;
+  const {ref, set} = cloud.fns;
+  set(ref(cloud.db, "groups/"+cloud.code), {
+    profiles: objBy(profiles, "id"),
+    games: objBy(games, "id"),
+    updated: new Date().toISOString()
+  }).catch(()=>{});
+}
+
+function handleRemote(v){
+  const rp = arrFromObj(v.profiles);
+  const rg = arrFromObj(v.games);
+  if(cloud.firstSync){
+    cloud.firstSync = false;
+    // توحيد المعرفات: نفس الاسم في السحابة = نفس اللاعب المحلي
+    const byName = {};
+    rp.forEach(p=>{ byName[p.name] = p; });
+    profiles.forEach(p=>{
+      const c = byName[p.name];
+      if(c && c.id !== p.id){
+        const old = p.id; p.id = c.id;
+        games.forEach(g=> g.players.forEach(pl=>{ if(pl.pid===old) pl.pid=c.id; }));
+        if(state) state.players.forEach(pl=>{ if(pl.pid===old) pl.pid=c.id; });
+        selPids = selPids.map(x=> x===old ? c.id : x);
+      }
+    });
+    profiles = profiles.filter((p,i)=> profiles.findIndex(x=>x.id===p.id)===i);
+    rp.forEach(p=>{ if(!profiles.some(x=>x.id===p.id)) profiles.push(p); });
+    rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
+    saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+    if(state) save();
+    cloudPush(); // ارفع نتيجة الدمج للسحابة
+  } else {
+    // بعد أول مزامنة: السحابة هي المصدر الموحّد
+    profiles = rp; games = rg;
+    saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  }
+  if(!$("setup").classList.contains("hidden")) renderSetup();
+}
+
+async function initCloud(){
+  renderCloud();
+  if(!cloud.code) return;
+  setCloudStatus("⏳ جاري الاتصال…");
+  try{
+    const [appM, dbM] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js")
+    ]);
+    const app = appM.initializeApp(FB_CONFIG);
+    cloud.db = dbM.getDatabase(app);
+    cloud.fns = dbM;
+    cloud.ready = true;
+    dbM.onValue(dbM.ref(cloud.db, ".info/connected"), s=>{
+      setCloudStatus(s.val() ? "🟢 متصل — المزامنة شغالة" : "🟡 بدون اتصال — بيتزامن أول ما ترجع الشبكة");
+    });
+    dbM.onValue(dbM.ref(cloud.db, "groups/"+cloud.code), snap=>{
+      handleRemote(snap.val() || {});
+    });
+  }catch(e){
+    setCloudStatus("⚠️ تعذر تحميل المزامنة — بيعيد المحاولة عند فتح التطبيق القادم");
+  }
+}
+
+$("createGroupBtn").onclick = ()=>{
+  cloud.code = groupCodeGen();
+  localStorage.setItem(GROUP_KEY, cloud.code);
+  location.reload();
+};
+$("joinGroupBtn").onclick = ()=>{
+  const c = $("joinCode").value.trim().toUpperCase();
+  if(!/^[A-Z0-9-]{6,20}$/.test(c)){ $("cloudErr").textContent = "الرمز غير صالح — تأكد منه"; return; }
+  localStorage.setItem(GROUP_KEY, c);
+  location.reload();
+};
+$("unlinkBtn").onclick = ()=>{
+  if(!confirm("فك ربط هذا الجهاز عن المجموعة؟ (بياناتك المحلية تبقى كما هي)")) return;
+  localStorage.removeItem(GROUP_KEY);
+  location.reload();
+};
+$("copyCodeBtn").onclick = ()=>{
+  const done = ()=>{ $("copyCodeBtn").textContent="✅ تم"; setTimeout(()=>$("copyCodeBtn").textContent="📋 نسخ",1200); };
+  if(navigator.clipboard) navigator.clipboard.writeText(cloud.code).then(done).catch(()=>prompt("انسخ الرمز:", cloud.code));
+  else prompt("انسخ الرمز:", cloud.code);
+};
+
 // ================= النسخ الاحتياطي =================
 $("exportBtn").onclick = ()=>{
   const data = {app:"kinkan", v:1, exported:new Date().toISOString(),
@@ -527,6 +669,7 @@ $("importFile").onchange = e=>{
       });
       saveJSON(PROF_KEY, profiles);
       saveJSON(GAMES_KEY, games);
+      cloudPush();
       renderSetup();
       alert("تم الاسترجاع والدمج بنجاح ✅");
     }catch(_){ alert("الملف غير صالح ❌"); }
@@ -572,6 +715,7 @@ function finishApply(){
   state.finished = state.players.some(p=>p.total>=LIMIT);
   if(state.finished) archiveGame();  // تسجيل اللعبة في الأرشيف
   else unarchiveGame();              // تعديل ألغى النهاية → إزالة من الأرشيف
+  cloudPush();
   save();
   if(state.finished){ renderOver(); show("over"); }
   else { renderGame(); show("game"); window.scrollTo({top:0, behavior:"smooth"}); }
@@ -834,6 +978,8 @@ if(saved && saved.players && saved.players.length){
 } else {
   renderSetup(); show("setup");
 }
+
+initCloud();
 
 // حماية التخزين + التطبيق القابل للتثبيت
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
