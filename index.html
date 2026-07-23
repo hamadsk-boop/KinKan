@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1f16">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="كنكان">
 <title>كنكان — إدارة الجلسة</title>
 <style>
   :root{
@@ -171,6 +177,16 @@
       <h2>🕹️ آخر الألعاب</h2>
       <div id="recentList"></div>
     </div>
+
+    <div class="card">
+      <h2>💾 النسخ الاحتياطي</h2>
+      <p class="subnote" style="text-align:right;">بياناتك (اللاعبون والإحصائيات) محفوظة على هذا الجهاز وتبقى تلقائياً. للاحتياط الإضافي أو نقلها لجهاز آخر:</p>
+      <div class="rowbtns">
+        <button class="btn btn-ghost" id="exportBtn">⬇️ حفظ نسخة</button>
+        <button class="btn btn-ghost" id="importBtn">⬆️ استرجاع نسخة</button>
+      </div>
+      <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+    </div>
   </section>
 
   <!-- ========== شاشة اللعب ========== -->
@@ -244,6 +260,7 @@ const LIMIT = 2000;
 const STORE_KEY = "kinkan-session-v1";
 const PROF_KEY = "kinkan-profiles-v1";
 const GAMES_KEY = "kinkan-games-v1";
+const LAST_KEY = "kinkan-last-setup-v1";
 
 // ================= الحالة =================
 let state = null; // {players:[{pid,name,total}], rounds:[...], finished:bool, gameId}
@@ -367,12 +384,23 @@ function checkStart(){
 
 $("startBtn").onclick = ()=>{
   const pids = selPids.slice(0,selectedCount);
+  saveJSON(LAST_KEY, {count:selectedCount, pids}); // تذكّر آخر مجموعة
   state = {
     players: pids.map(pid=>({pid, name: profName(pid), total:0})),
     rounds:[], finished:false, gameId: uid()
   };
   save(); renderGame(); show("game");
 };
+
+// استرجاع آخر مجموعة لعبت تلقائياً عند فتح التطبيق
+function restoreLastSetup(){
+  if(selectedCount) return;
+  const last = loadJSON(LAST_KEY, null);
+  if(!last || !last.count) return;
+  selectedCount = last.count;
+  selPids = (last.pids||[]).map(pid=> profiles.some(p=>p.id===pid) ? pid : null);
+  [...$("countChips").children].forEach(c=>c.classList.toggle("active", +c.textContent===selectedCount));
+}
 
 // ================= أرشيف الألعاب =================
 function archiveGame(){
@@ -464,10 +492,48 @@ function renderDashboard(){
 
 function renderSetup(){
   renderProfiles();
+  restoreLastSetup();
   buildPlayerSelects(selectedCount);
   renderDashboard();
   checkStart();
 }
+
+// ================= النسخ الاحتياطي =================
+$("exportBtn").onclick = ()=>{
+  const data = {app:"kinkan", v:1, exported:new Date().toISOString(),
+    profiles, games, session: load(), lastSetup: loadJSON(LAST_KEY, null)};
+  const blob = new Blob([JSON.stringify(data, null, 1)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "kinkan-backup-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$("importBtn").onclick = ()=> $("importFile").click();
+$("importFile").onchange = e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const d = JSON.parse(rd.result);
+      if(d.app!=="kinkan") throw new Error("bad file");
+      // دمج بدون تكرار: الملفات بالمعرف أو الاسم، والألعاب بالمعرف
+      (d.profiles||[]).forEach(p=>{
+        if(p && p.id && p.name && !profiles.some(x=>x.id===p.id || x.name===p.name)) profiles.push(p);
+      });
+      (d.games||[]).forEach(g=>{
+        if(g && g.id && !games.some(x=>x.id===g.id)) games.push(g);
+      });
+      saveJSON(PROF_KEY, profiles);
+      saveJSON(GAMES_KEY, games);
+      renderSetup();
+      alert("تم الاسترجاع والدمج بنجاح ✅");
+    }catch(_){ alert("الملف غير صالح ❌"); }
+  };
+  rd.readAsText(f);
+  e.target.value = "";
+};
 
 // ================= شاشة اللعب =================
 let editIdx = null; // فهرس الجولة الجاري تعديلها في state.rounds
@@ -768,6 +834,11 @@ if(saved && saved.players && saved.players.length){
 } else {
   renderSetup(); show("setup");
 }
+
+// حماية التخزين + التطبيق القابل للتثبيت
+if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+if("serviceWorker" in navigator && location.protocol!=="file:")
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
 </html>
