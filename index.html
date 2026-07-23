@@ -169,6 +169,7 @@
 
   <!-- ========== شاشة الإعداد ========== -->
   <section id="setup">
+    <button class="btn btn-gold hidden" id="liveBanner" style="margin-top:14px;"></button>
     <div class="card">
       <h2>🎮 جلسة جديدة — كم عدد اللاعبين؟</h2>
       <div class="chips" id="countChips"></div>
@@ -205,7 +206,7 @@
   <!-- ========== شاشة اللعب ========== -->
   <section id="game" class="hidden">
     <div class="card">
-      <h2 class="hrow"><span>📊 التسجيل</span><button class="peek" id="statsPeek">📈 اللوحة</button></h2>
+      <h2 class="hrow"><span>📊 التسجيل</span><span style="display:flex;gap:6px;"><button class="peek" id="homePeek">🏠 الرئيسية</button><button class="peek" id="statsPeek">📈 اللوحة</button></span></h2>
       <table>
         <thead><tr><th style="text-align:right">اللاعب</th><th>النقاط</th><th style="width:35%">الوضع</th></tr></thead>
         <tbody id="totalsBody"></tbody>
@@ -406,6 +407,7 @@ function checkStart(){
 }
 
 $("startBtn").onclick = ()=>{
+  if(state && !state.finished && !confirm("فيه لعبة شغالة حالياً — بدء جلسة جديدة بينهيها ويستبدلها عند الجميع. نكمل؟")) return;
   const pids = selPids.slice(0,selectedCount);
   saveJSON(LAST_KEY, {count:selectedCount, pids}); // تذكّر آخر مجموعة
   state = {
@@ -519,7 +521,18 @@ function renderSetup(){
   buildPlayerSelects(selectedCount);
   renderDashboard();
   checkStart();
+  const b = $("liveBanner");
+  b.classList.toggle("hidden", !state);
+  if(state) b.textContent = state.finished
+    ? "🏁 آخر لعبة منتهية — اعرض النتيجة"
+    : "🎮 فيه لعبة شغالة الآن — اضغط للمتابعة ←";
 }
+$("liveBanner").onclick = ()=>{
+  if(!state) return;
+  if(state.finished){ renderOver(); show("over"); }
+  else { renderGame(); show("game"); }
+};
+$("homePeek") && ($("homePeek").onclick = ()=>{ renderSetup(); show("setup"); window.scrollTo({top:0}); });
 
 // ================= صفحة الإحصائيات =================
 // ألوان السلاسل: لوحة مصادق عليها للسطح الداكن، اللون يتبع اللاعب دائماً
@@ -671,10 +684,19 @@ function renderStatsPage(){
   wireLineHover(gs, list);
 }
 
-function openStats(){ renderStatsPage(); show("stats"); window.scrollTo({top:0}); }
+let statsReturn = "setup";
+function openStats(){
+  statsReturn = ["setup","game","over"].find(id=>!$(id).classList.contains("hidden")) || "setup";
+  renderStatsPage(); show("stats"); window.scrollTo({top:0});
+}
 $("openStatsBtn").onclick = openStats;
 $("statsPeek").onclick = openStats;
-$("statsBack").onclick = ()=>{ tipHide(); showForState(); };
+$("statsBack").onclick = ()=>{
+  tipHide();
+  if(statsReturn==="game" && state && !state.finished){ renderGame(); show("game"); }
+  else if(statsReturn==="over" && state && state.finished){ renderOver(); show("over"); }
+  else { renderSetup(); show("setup"); }
+};
 
 // ================= قاعدة البيانات الدائمة (Firebase) =================
 const DB_PATH = "groups/estraha"; // قاعدة موحدة ثابتة لاستراحة واحدة
@@ -763,15 +785,17 @@ function handleRemote(v){
   // بعد أول مزامنة: القاعدة هي المصدر الدائم للجميع
   profiles = rp; games = rg;
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
-  const inStats = !$("stats").classList.contains("hidden");
+  const cur = ["setup","game","over","stats"].find(id=>!$(id).classList.contains("hidden"));
   if(JSON.stringify(rs) !== JSON.stringify(state)){
     state = rs;
     editIdx = null;
     if(state) save(); else localStorage.removeItem(STORE_KEY);
-    if(inStats) renderStatsPage(); else showForState();
-  } else if(inStats){
+    if(cur==="stats") renderStatsPage();
+    else if(cur==="game" || cur==="over") showForState();
+    else renderSetup();
+  } else if(cur==="stats"){
     renderStatsPage();
-  } else if(!$("setup").classList.contains("hidden")){
+  } else if(cur==="setup"){
     renderSetup();
   }
 }
@@ -1094,13 +1118,8 @@ $("newSessionBtn").onclick = ()=>{
 // ================= بدء التشغيل =================
 buildSetup();
 const saved = load();
-if(saved && saved.players && saved.players.length){
-  state = saved;
-  if(state.finished){ renderOver(); show("over"); }
-  else { renderGame(); show("game"); }
-} else {
-  renderSetup(); show("setup");
-}
+if(saved && saved.players && saved.players.length) state = saved;
+renderSetup(); show("setup");
 
 initCloud();
 
