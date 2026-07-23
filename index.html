@@ -126,6 +126,26 @@
     display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
   .edit-banner button{border:1px solid var(--line);background:transparent;color:var(--muted);
     border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;}
+  /* stats page */
+  .btn-back{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;
+    padding:6px 14px;cursor:pointer;font-size:13.5px;}
+  .peek{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;
+    padding:4px 10px;font-size:12px;cursor:pointer;font-weight:400;}
+  .card h2.hrow{display:flex;justify-content:space-between;align-items:center;}
+  .brow{display:flex;align-items:center;gap:8px;margin-top:8px;}
+  .bname{width:76px;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .btrack{flex:1;background:var(--card2);border-radius:4px;height:16px;}
+  .btrack i{display:block;height:100%;border-radius:4px 2px 2px 4px;min-width:0;}
+  .bval{min-width:40px;font-size:13px;font-weight:700;text-align:left;}
+  .lgrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .lg{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted);}
+  .lg i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+  .viz{width:100%;height:auto;display:block;}
+  .tip{position:fixed;z-index:50;background:var(--bg);border:1px solid var(--gold);border-radius:9px;
+    padding:8px 10px;font-size:12.5px;pointer-events:none;display:none;max-width:230px;
+    box-shadow:0 4px 14px rgba(0,0,0,.45);line-height:1.8;}
+  .form-row{display:flex;align-items:center;gap:10px;margin-top:8px;}
+  .form-seq{font-size:15px;letter-spacing:3px;direction:ltr;}
   /* penalties */
   .pen-chips .chip{font-size:14px;padding:10px 4px;min-width:64px;flex:0 1 auto;}
   .pen-row{display:flex;gap:10px;margin-top:12px;}
@@ -172,6 +192,7 @@
       <h2>📊 لوحة الأبطال <span id="gamesCount" style="color:var(--muted);font-size:13px;"></span></h2>
       <div class="hl-row" id="highlights"></div>
       <div class="hist" id="statsBox"></div>
+      <button class="btn btn-gold" id="openStatsBtn">📊 عرض لوحة الإحصائيات الكاملة</button>
     </div>
 
     <div class="card hidden" id="recentCard">
@@ -184,7 +205,7 @@
   <!-- ========== شاشة اللعب ========== -->
   <section id="game" class="hidden">
     <div class="card">
-      <h2>📊 التسجيل</h2>
+      <h2 class="hrow"><span>📊 التسجيل</span><button class="peek" id="statsPeek">📈 اللوحة</button></h2>
       <table>
         <thead><tr><th style="text-align:right">اللاعب</th><th>النقاط</th><th style="width:35%">الوضع</th></tr></thead>
         <tbody id="totalsBody"></tbody>
@@ -220,6 +241,14 @@
         <button class="btn btn-ghost" id="resetBtn">🔄 جلسة جديدة</button>
       </div>
     </div>
+  </section>
+
+  <!-- ========== صفحة الإحصائيات ========== -->
+  <section id="stats" class="hidden">
+    <div class="card">
+      <h2 class="hrow"><span>📊 لوحة الإحصائيات</span><button class="btn-back" id="statsBack">→ رجوع</button></h2>
+    </div>
+    <div id="statsContent"></div>
   </section>
 
   <!-- ========== شاشة النهاية ========== -->
@@ -268,7 +297,7 @@ function load(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)); }catch
 function loadJSON(k, def){ try{ return JSON.parse(localStorage.getItem(k)) || def; }catch(e){ return def; } }
 function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function show(id){ ["setup","game","over"].forEach(s=>$(s).classList.toggle("hidden", s!==id)); }
+function show(id){ ["setup","game","over","stats"].forEach(s=>$(s).classList.toggle("hidden", s!==id)); }
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
 
 // ================= ملفات اللاعبين =================
@@ -492,6 +521,161 @@ function renderSetup(){
   checkStart();
 }
 
+// ================= صفحة الإحصائيات =================
+// ألوان السلاسل: لوحة مصادق عليها للسطح الداكن، اللون يتبع اللاعب دائماً
+const SERIES = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"];
+
+function statsData(){
+  const gs = [...games].sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  const P = {}, order = [];
+  gs.forEach(g=> g.players.forEach(pl=>{
+    const k = pl.pid || "n:"+pl.name;
+    if(!P[k]){ P[k] = {key:k, name:pl.name, played:0, wins:0, lasts:0, pts:0, form:[]}; order.push(k); }
+    const st = P[k];
+    st.name = pl.name; st.played++; st.pts += pl.total;
+    if(pl.rank===1) st.wins++;
+    if(pl.rank===g.players.length) st.lasts++;
+    st.form.push(pl.rank===1 ? "🥇" : (pl.rank===g.players.length ? "💀" : "▫️"));
+  }));
+  order.forEach((k,i)=>{ P[k].color = SERIES[i % SERIES.length]; });
+  order.forEach(k=>{
+    let c = 0;
+    P[k].cum = gs.map(g=>{
+      const pl = g.players.find(p=>(p.pid||"n:"+p.name)===k);
+      if(pl) c += pl.total;
+      return c;
+    });
+  });
+  return {gs, list: order.map(k=>P[k])};
+}
+
+const tipEl = ()=> { let t=$("vizTip"); if(!t){ t=document.createElement("div"); t.id="vizTip"; t.className="tip"; document.body.appendChild(t);} return t; };
+function tipShow(html, x, y){
+  const t = tipEl(); t.innerHTML = html; t.style.display = "block";
+  const w = Math.min(230, window.innerWidth-20);
+  t.style.left = Math.max(8, Math.min(x+12, window.innerWidth-w-8)) + "px";
+  t.style.top = (y+14) + "px";
+}
+function tipHide(){ tipEl().style.display = "none"; }
+
+function barCard(title, sub, rows, tipFn){
+  const max = Math.max(...rows.map(r=>r.val), 1);
+  const id = "bc" + Math.random().toString(36).slice(2,7);
+  const html = `<div class="card" id="${id}"><h2>${title}</h2>
+    ${sub?`<p class="subnote" style="text-align:right;margin:0 0 4px;">${sub}</p>`:""}
+    ${rows.map((r,i)=>`<div class="brow" data-i="${i}">
+      <span class="bname">${esc(r.name)}</span>
+      <span class="btrack"><i style="width:${r.val? Math.max(3, r.val/max*100) : 0}%;background:${r.color}"></i></span>
+      <span class="bval">${r.val}</span></div>`).join("")}</div>`;
+  setTimeout(()=>{
+    const card = $(id); if(!card) return;
+    card.querySelectorAll(".brow").forEach(el=>{
+      const r = rows[+el.dataset.i];
+      const on = e=>{ const pt = e.touches? e.touches[0] : e; tipShow(tipFn(r), pt.clientX, pt.clientY); };
+      el.onmousemove = on; el.onmouseleave = tipHide;
+      el.ontouchstart = on; el.ontouchend = ()=> setTimeout(tipHide, 1500);
+    });
+  }, 0);
+  return html;
+}
+
+function lineCard(gs, list){
+  const W=600, H=280, pt=14, pr=16, pb=30, pl_=42;
+  const N = gs.length;
+  const maxY = Math.max(...list.flatMap(p=>p.cum), 1);
+  const X = i => N===1 ? pl_+(W-pl_-pr)/2 : pl_ + i*(W-pl_-pr)/(N-1);
+  const Y = v => pt + (1 - v/maxY)*(H-pt-pb);
+  const step = Math.pow(10, Math.floor(Math.log10(maxY))) / (maxY/Math.pow(10,Math.floor(Math.log10(maxY))) >= 5 ? 1 : 2);
+  let grid = "", yl = "";
+  for(let v=step; v<=maxY; v+=step){
+    grid += `<line x1="${pl_}" x2="${W-pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2b5a3c" stroke-width="1"/>`;
+    yl += `<text x="${pl_-6}" y="${Y(v)+4}" text-anchor="end" font-size="10" fill="#9db8a6">${v}</text>`;
+  }
+  const xtick = Math.max(1, Math.ceil(N/8));
+  let xl = "";
+  for(let i=0;i<N;i+=xtick) xl += `<text x="${X(i)}" y="${H-10}" text-anchor="middle" font-size="10" fill="#9db8a6">${i+1}</text>`;
+  const paths = list.map(p=>{
+    const pts = p.cum.map((v,i)=>`${X(i)},${Y(v)}`).join(" ");
+    const mk = N<=14 ? p.cum.map((v,i)=>`<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${p.color}" stroke="#14311f" stroke-width="2"/>`).join("") : "";
+    return `<polyline points="${pts}" fill="none" stroke="${p.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${mk}`;
+  }).join("");
+  const legend = `<div class="lgrow">${list.map(p=>`<span class="lg"><i style="background:${p.color}"></i>${esc(p.name)}</span>`).join("")}</div>`;
+  return `<div class="card"><h2>📈 رحلة النقاط التراكمية</h2>
+    <p class="subnote" style="text-align:right;margin:0 0 8px;">مجموع نقاط كل لاعب عبر الألعاب — الخط الأنزل هو الأفضل 😎</p>
+    ${legend}
+    <svg id="lineViz" class="viz" viewBox="0 0 ${W} ${H}" direction="ltr">
+      ${grid}${yl}${xl}
+      <line id="xhair" x1="0" x2="0" y1="${pt}" y2="${H-pb}" stroke="#e8c765" stroke-width="1" stroke-dasharray="3,3" style="display:none"/>
+      ${paths}
+      <rect x="${pl_}" y="0" width="${W-pl_-pr}" height="${H}" fill="transparent" id="lineHit"/>
+    </svg></div>`;
+}
+
+function wireLineHover(gs, list){
+  const svg = $("lineViz"); if(!svg) return;
+  const hit = $("lineHit"), xh = $("xhair");
+  const W=600, pr=16, pl_=42, N=gs.length;
+  const move = e=>{
+    const pt = e.touches? e.touches[0] : e;
+    const box = svg.getBoundingClientRect();
+    const fx = (pt.clientX - box.left) / box.width * W;
+    const i = N===1 ? 0 : Math.round((fx - pl_) / ((W-pl_-pr)/(N-1)));
+    if(i<0 || i>=N){ xh.style.display="none"; tipHide(); return; }
+    const X = N===1 ? pl_+(W-pl_-pr)/2 : pl_ + i*(W-pl_-pr)/(N-1);
+    xh.setAttribute("x1", X); xh.setAttribute("x2", X); xh.style.display="block";
+    const d = new Date(gs[i].date);
+    const rows = list.map(p=>({n:p.name, v:p.cum[i], c:p.color})).sort((a,b)=>a.v-b.v)
+      .map(p=>`<span style="display:flex;align-items:center;gap:5px;"><i style="width:8px;height:8px;border-radius:2px;background:${p.c};display:inline-block"></i>${esc(p.n)}: <b>${p.v}</b></span>`).join("");
+    tipShow(`<b>اللعبة ${i+1}</b> · ${d.toLocaleDateString("ar-SA",{day:"numeric",month:"short"})}<br>${rows}`, pt.clientX, pt.clientY);
+  };
+  hit.onmousemove = move;
+  hit.onmouseleave = ()=>{ xh.style.display="none"; tipHide(); };
+  hit.ontouchstart = move;
+  hit.ontouchend = ()=>{ setTimeout(()=>{ xh.style.display="none"; tipHide(); }, 1800); };
+}
+
+function renderStatsPage(){
+  const box = $("statsContent");
+  if(!games.length){
+    box.innerHTML = '<div class="card"><p class="subnote">لا توجد ألعاب منتهية بعد — خلصوا أول لعبة وتعالوا شوفوا اللوحة 🂡</p></div>';
+    return;
+  }
+  const {gs, list} = statsData();
+  const totRounds = gs.reduce((a,g)=>a+(g.rounds||0),0);
+  const champ = [...list].sort((a,b)=>b.wins-a.wins)[0];
+  const goat  = [...list].sort((a,b)=>b.lasts-a.lasts)[0];
+  const tiles = `<div class="card"><div class="hl-row" style="margin:0;">
+    <div class="hl"><div class="t">🎮 الألعاب</div><div class="v">${gs.length}</div></div>
+    <div class="hl"><div class="t">🔁 الجولات</div><div class="v">${totRounds}</div></div>
+    <div class="hl"><div class="t">👑 الأكثر فوزاً</div><div class="v">${esc(champ.name)}</div><div class="s">${champ.wins} فوز</div></div>
+    <div class="hl"><div class="t">💀 الأكثر أخيراً</div><div class="v">${esc(goat.name)}</div><div class="s">${goat.lasts} مرة</div></div>
+  </div></div>`;
+  const pct = (a,b)=> b? Math.round(a/b*100) : 0;
+  const wins  = barCard("🥇 الانتصارات", "كم مرة خلّص أول (أقل نقاط)",
+    [...list].sort((a,b)=>b.wins-a.wins).map(p=>({...p, val:p.wins})),
+    r=>`<b>${esc(r.name)}</b><br>${r.val} فوز من ${r.played} لعبة (${pct(r.val,r.played)}%)`);
+  const lasts = barCard("💀 المركز الأخير", "كم مرة وصل ٢٠٠٠ وطلع أخير",
+    [...list].sort((a,b)=>b.lasts-a.lasts).map(p=>({...p, val:p.lasts})),
+    r=>`<b>${esc(r.name)}</b><br>${r.val} مرة أخير من ${r.played} لعبة (${pct(r.val,r.played)}%)`);
+  const played = barCard("🎮 المشاركات", "عدد الألعاب التي لعبها",
+    [...list].sort((a,b)=>b.played-a.played).map(p=>({...p, val:p.played})),
+    r=>`<b>${esc(r.name)}</b><br>${r.val} لعبة`);
+  const points = barCard("🧮 إجمالي النقاط التاريخي", "مجموع كل النقاط المسجلة عليه — الأقل = الأفضل 😎",
+    [...list].sort((a,b)=>a.pts-b.pts).map(p=>({...p, val:p.pts})),
+    r=>`<b>${esc(r.name)}</b><br>الإجمالي: ${r.val}<br>المتوسط: ${Math.round(r.val/r.played)} نقطة/لعبة`);
+  const form = `<div class="card"><h2>🔥 الفورمة — آخر ٥ ألعاب</h2>
+    <p class="subnote" style="text-align:right;margin:0 0 4px;">الأحدث على اليمين · 🥇 أول · 💀 أخير · ▫️ وسط</p>
+    ${list.map(p=>`<div class="form-row"><span class="bname">${esc(p.name)}</span>
+      <span class="form-seq">${p.form.slice(-5).reverse().join(" ")}</span></div>`).join("")}</div>`;
+  box.innerHTML = tiles + wins + lasts + lineCard(gs, list) + points + form;
+  wireLineHover(gs, list);
+}
+
+function openStats(){ renderStatsPage(); show("stats"); window.scrollTo({top:0}); }
+$("openStatsBtn").onclick = openStats;
+$("statsPeek").onclick = openStats;
+$("statsBack").onclick = ()=>{ tipHide(); showForState(); };
+
 // ================= قاعدة البيانات الدائمة (Firebase) =================
 const DB_PATH = "groups/estraha"; // قاعدة موحدة ثابتة لاستراحة واحدة
 const FB_CONFIG = {
@@ -579,11 +763,14 @@ function handleRemote(v){
   // بعد أول مزامنة: القاعدة هي المصدر الدائم للجميع
   profiles = rp; games = rg;
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  const inStats = !$("stats").classList.contains("hidden");
   if(JSON.stringify(rs) !== JSON.stringify(state)){
     state = rs;
     editIdx = null;
     if(state) save(); else localStorage.removeItem(STORE_KEY);
-    showForState();
+    if(inStats) renderStatsPage(); else showForState();
+  } else if(inStats){
+    renderStatsPage();
   } else if(!$("setup").classList.contains("hidden")){
     renderSetup();
   }
