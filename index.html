@@ -165,7 +165,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٣</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٤</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -416,7 +416,7 @@ $("startBtn").onclick = ()=>{
     players: pids.map(pid=>({pid, name: profName(pid), total:0})),
     rounds:[], finished:false, gameId: uid()
   };
-  save(); cloudPush(); renderGame(); show("game");
+  touchSession(); save(); cloudPush(); renderGame(); show("game");
 };
 
 // استرجاع آخر مجموعة لعبت تلقائياً عند فتح التطبيق
@@ -712,11 +712,18 @@ const FB_CONFIG = {
   messagingSenderId: "952954580308",
   appId: "1:952954580308:web:6f59d4d785ecb08e2a2cc1"
 };
+const SESSAT_KEY = "kinkan-session-at-v1";
+let sessionAt = +(localStorage.getItem(SESSAT_KEY) || 0); // طابع زمني لآخر تعديل محلي للجلسة
 const cloud = { db:null, fns:null, ready:false, firstSync:true };
+
+function setSessionAt(t){ sessionAt = t; try{ localStorage.setItem(SESSAT_KEY, String(t)); }catch(e){} }
+// يُنادى عند كل تعديل محلي حقيقي للجلسة (بدء/تسجيل/تعديل/غرامة/إنهاء/مسح)
+function touchSession(){ setSessionAt(Date.now()); }
 
 function setCloudStatus(t){ const el=$("dbStatus"); if(el) el.textContent = t; }
 function arrFromObj(o){ return o ? Object.values(o) : []; }
 function objBy(arr, k){ const o={}; arr.forEach(x=>{ if(x && x[k]) o[x[k]]=x; }); return o; }
+function sessionsEqual(a,b){ return JSON.stringify(a||null) === JSON.stringify(b||null); }
 
 function cloudPush(){
   if(!cloud.ready) return;
@@ -725,6 +732,7 @@ function cloudPush(){
     profiles: objBy(profiles, "id"),
     games: objBy(games, "id"),
     session: state,
+    sessionAt: sessionAt,
     updated: new Date().toISOString()
   }).catch(()=>{});
 }
@@ -756,10 +764,38 @@ function showForState(){
   else { renderSetup(); show("setup"); }
 }
 
+// نعيد رسم الشاشة الظاهرة بعد المزامنة — لكن لا نلمس شاشة اللعب أثناء الإدخال
+// إلا إذا تغيّرت الجلسة فعلاً تحت أيدينا (تبنّينا جلسة أحدث من جهاز آخر)،
+// حتى لا يُمسح اختيار الفائز الذي يكتبه المستخدم الآن.
+function refreshVisible(sessionChanged){
+  const cur = ["setup","game","over","stats"].find(id=>!$(id).classList.contains("hidden")) || "setup";
+  if(cur==="stats") renderStatsPage();
+  else if(cur==="setup") renderSetup();
+  else if((cur==="game" || cur==="over") && sessionChanged) showForState();
+}
+
+// يقرر مصير الجلسة بمقارنة الطابع الزمني — الأحدث يفوز دائماً،
+// فالجلسة الحيّة (فيها تسجيل جديد) لا يمكن أن تُمسح بجلسة أقدم من جهاز آخر.
+// يُرجع: "same" | "adopted" | "kept"
+function reconcileSession(rs, rAt){
+  if(sessionsEqual(rs, state)){
+    if(rAt > sessionAt) setSessionAt(rAt);
+    return "same";
+  }
+  if(rAt > sessionAt){          // جلسة القاعدة أحدث → نتبناها
+    state = rs; editIdx = null; setSessionAt(rAt);
+    if(state) save(); else localStorage.removeItem(STORE_KEY);
+    return "adopted";
+  }
+  return "kept";                // جلستنا المحلية أحدث → نحتفظ بها ونرفعها
+}
+
 function handleRemote(v){
   const rp = arrFromObj(v.profiles);
   const rg = arrFromObj(v.games);
   const rs = normSession(v.session || null);
+  const rAt = +(v.sessionAt || 0);
+
   if(cloud.firstSync){
     cloud.firstSync = false;
     // توحيد المعرفات: نفس الاسم في القاعدة = نفس اللاعب المحلي
@@ -775,32 +811,24 @@ function handleRemote(v){
       }
     });
     profiles = profiles.filter((p,i)=> profiles.findIndex(x=>x.id===p.id)===i);
+    // هل عندنا ملفات/ألعاب محلية غير موجودة بالقاعدة؟ (لنعرف إن كنا سنرفع)
+    let localExtra = profiles.some(p=>!rp.some(x=>x.id===p.id)) || games.some(g=>!rg.some(x=>x.id===g.id));
     rp.forEach(p=>{ if(!profiles.some(x=>x.id===p.id)) profiles.push(p); });
     rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
     saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
-    // الجلسة: المحلية الجارية لها الأولوية، وإلا نتبنى جلسة القاعدة
-    if(!state && rs){ state = rs; save(); showForState(); }
-    else if(state) save();
-    cloudPush(); // ارفع نتيجة الدمج للقاعدة
-    if(!$("setup").classList.contains("hidden")) renderSetup();
+    const res = reconcileSession(rs, rAt);
+    // ارفع فقط إذا كانت جلستنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
+    if(res === "kept" || localExtra) cloudPush();
+    refreshVisible(res === "adopted");
     return;
   }
-  // بعد أول مزامنة: القاعدة هي المصدر الدائم للجميع
+
+  // بعد أول مزامنة: الملفات والألعاب من القاعدة مباشرة
   profiles = rp; games = rg;
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
-  const cur = ["setup","game","over","stats"].find(id=>!$(id).classList.contains("hidden"));
-  if(JSON.stringify(rs) !== JSON.stringify(state)){
-    state = rs;
-    editIdx = null;
-    if(state) save(); else localStorage.removeItem(STORE_KEY);
-    if(cur==="stats") renderStatsPage();
-    else if(cur==="game" || cur==="over") showForState();
-    else renderSetup();
-  } else if(cur==="stats"){
-    renderStatsPage();
-  } else if(cur==="setup"){
-    renderSetup();
-  }
+  const res = reconcileSession(rs, rAt);
+  if(res === "kept") cloudPush();   // جلستنا أحدث → أعد تأكيدها في القاعدة
+  refreshVisible(res === "adopted");
 }
 
 async function initCloud(){
@@ -863,6 +891,7 @@ function finishApply(){
   state.finished = state.players.some(p=>p.total>=LIMIT);
   if(state.finished) archiveGame();  // تسجيل اللعبة في الأرشيف
   else unarchiveGame();              // تعديل ألغى النهاية → إزالة من الأرشيف
+  touchSession();
   cloudPush();
   save();
   if(state.finished){ renderOver(); show("over"); }
@@ -1054,7 +1083,7 @@ $("resetBtn").onclick = ()=>{
   if(!confirm("بدء جلسة جديدة؟ سيتم مسح التسجيل الحالي.")) return;
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
-  cloudPush();
+  touchSession(); cloudPush();
   renderSetup(); show("setup");
 };
 
@@ -1109,12 +1138,12 @@ $("rematchBtn").onclick = ()=>{
   state.finished = false;
   state.gameId = uid(); // لعبة جديدة بأرشيف مستقل
   editIdx = null;
-  save(); cloudPush(); renderGame(); show("game");
+  touchSession(); save(); cloudPush(); renderGame(); show("game");
 };
 $("newSessionBtn").onclick = ()=>{
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
-  cloudPush();
+  touchSession(); cloudPush();
   renderSetup(); show("setup");
 };
 
