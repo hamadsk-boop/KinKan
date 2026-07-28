@@ -121,6 +121,8 @@
     background:var(--card2);border:1px solid var(--line);border-radius:10px;
     padding:10px 12px;margin-top:8px;font-size:13.5px;flex-wrap:wrap;}
   .recent .rd{color:var(--muted);font-size:11.5px;width:100%;}
+  .gdel{background:transparent;border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    cursor:pointer;font-size:12px;padding:3px 8px;margin-right:auto;}
   /* editing */
   .editbtn{background:transparent;border:none;cursor:pointer;font-size:14px;padding:2px 4px;}
   .edit-banner{background:rgba(90,169,224,.12);border:1px dashed var(--blue);color:var(--blue);
@@ -181,7 +183,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٦</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٧</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -221,8 +223,8 @@
     </div>
 
     <div class="card hidden" id="recentCard">
-      <h2>🕹️ آخر الألعاب</h2>
-      <div id="recentList"></div>
+      <h2>🕹️ سجل الألعاب <span id="gamesTotal" style="color:var(--muted);font-size:13px;"></span></h2>
+      <div class="hist" id="recentList"></div>
     </div>
 
   </section>
@@ -618,18 +620,39 @@ function renderDashboard(){
   });
   html += `</tbody></table>`;
   $("statsBox").innerHTML = html;
-  // آخر الألعاب
-  const recent = [...games].sort((a,b)=> b.date.localeCompare(a.date)).slice(0,5);
-  $("recentList").innerHTML = recent.map(g=>{
-    const w = g.players.find(p=>p.rank===1);
-    const l = g.players.find(p=>p.rank===g.players.length);
+  // سجل الألعاب (الكل) مع إمكانية الحذف
+  $("gamesTotal").textContent = `(${games.length})`;
+  const allGames = [...games].sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+  const box = $("recentList");
+  box.innerHTML = "";
+  allGames.forEach(g=>{
+    const w = g.players.find(p=>p.rank===1) || g.players[0];
+    const l = g.players.find(p=>p.rank===g.players.length) || g.players[g.players.length-1];
     const d = new Date(g.date);
     const ds = d.toLocaleDateString("ar-SA",{day:"numeric",month:"short"}) + " " +
                d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
-    return `<div class="recent"><span class="rd">📅 ${ds} · ${g.players.length} لاعبين · ${g.rounds} جولة</span>
+    const div = document.createElement("div");
+    div.className = "recent";
+    div.innerHTML = `<span class="rd">📅 ${ds} · ${g.players.length} لاعبين · ${g.rounds} جولة</span>
       <span class="leader">🥇 ${esc(w.name)} (${w.total})</span>
-      <span class="danger">💀 ${esc(l.name)} (${l.total})</span></div>`;
-  }).join("");
+      <span class="danger">💀 ${esc(l.name)} (${l.total})</span>
+      <button class="gdel" title="حذف اللعبة">🗑</button>`;
+    div.querySelector(".gdel").onclick = ()=> deleteGame(g.id);
+    box.appendChild(div);
+  });
+}
+
+// حذف لعبة من السجل التاريخي — تختفي بياناتها من الإحصائيات نهائياً (محمي بالرمز السري)
+function deleteGame(id){
+  const g = games.find(x=>x.id===id); if(!g) return;
+  const code = prompt("لحذف هذه اللعبة من السجل والإحصائيات نهائياً، أدخل الرمز السري:");
+  if(code===null) return;
+  if(code.trim() !== DELETE_CODE){ alert("الرمز غير صحيح ❌ — لم تُحذف اللعبة"); return; }
+  games = games.filter(x=>x.id!==id);
+  saveJSON(GAMES_KEY, games);
+  cloudPush();
+  renderDashboard();
+  if(!$("stats").classList.contains("hidden")) renderStatsPage();
 }
 
 function renderParked(){
