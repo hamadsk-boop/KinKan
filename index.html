@@ -126,6 +126,20 @@
     display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
   .edit-banner button{border:1px solid var(--line);background:transparent;color:var(--muted);
     border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12.5px;}
+  /* parked sessions & mid-game add */
+  .parked{background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;margin-top:8px;}
+  .parked-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .parked-info{font-size:14px;font-weight:700;}
+  .parked-sub{color:var(--muted);font-size:11.5px;margin-top:3px;}
+  .parked-btns{display:flex;gap:6px;}
+  .parked-btns button{border:1px solid var(--line);background:transparent;border-radius:8px;
+    padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;}
+  .parked-btns .resume{background:var(--gold);color:#20301c;border-color:var(--gold);}
+  .parked-btns .del{color:var(--muted);}
+  .addp-row{display:flex;gap:8px;margin-top:10px;}
+  .addp-row select{flex:1;padding:10px;border-radius:9px;border:1px solid var(--line);
+    background:var(--card2);color:var(--text);font-size:15px;appearance:none;}
   /* stats page */
   .btn-back{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;
     padding:6px 14px;cursor:pointer;font-size:13.5px;}
@@ -165,13 +179,19 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٤</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٥</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
   <section id="setup">
     <button class="btn btn-gold hidden" id="liveBanner" style="margin-top:14px;"></button>
     <button class="btn btn-ghost" id="dashBtn" style="margin-top:14px;font-size:16px;">📊 لوحة الإحصائيات والسجلّات</button>
+
+    <div class="card hidden" id="parkedCard">
+      <h2>🗂️ جلسات محفوظة (غير مكتملة)</h2>
+      <div id="parkedList"></div>
+    </div>
+
     <div class="card">
       <h2>🎮 جلسة جديدة — كم عدد اللاعبين؟</h2>
       <div class="chips" id="countChips"></div>
@@ -213,6 +233,13 @@
         <thead><tr><th style="text-align:right">اللاعب</th><th>النقاط</th><th style="width:35%">الوضع</th></tr></thead>
         <tbody id="totalsBody"></tbody>
       </table>
+      <button class="btn btn-ghost" id="addPlayerBtn" style="font-size:14px;">➕ أضف لاعباً للجلسة</button>
+      <div class="addp-row hidden" id="addPlayerRow">
+        <select id="addPlayerSel"></select>
+        <button class="btn btn-gold" id="addPlayerDo" style="margin-top:0;width:auto;padding:10px 18px;">إضافة</button>
+        <button class="btn btn-ghost" id="addPlayerCancel" style="margin-top:0;width:auto;padding:10px 14px;">إلغاء</button>
+      </div>
+      <div class="err" id="addPlayerErr"></div>
     </div>
 
     <div class="card" id="entryCard">
@@ -241,8 +268,9 @@
       <div class="hist" id="histBox"><p class="subnote">لا توجد جولات بعد</p></div>
       <div class="rowbtns">
         <button class="btn btn-ghost" id="undoBtn">↩️ تراجع عن آخر تسجيل</button>
-        <button class="btn btn-ghost" id="resetBtn">🔄 جلسة جديدة</button>
+        <button class="btn btn-ghost" id="endSessionBtn">🏁 إنهاء الجلسة</button>
       </div>
+      <button class="btn btn-ghost" id="resetBtn" style="font-size:14px;">🔄 جلسة جديدة (تُحفظ الحالية)</button>
     </div>
   </section>
 
@@ -285,12 +313,14 @@ const STORE_KEY = "kinkan-session-v1";
 const PROF_KEY = "kinkan-profiles-v1";
 const GAMES_KEY = "kinkan-games-v1";
 const LAST_KEY = "kinkan-last-setup-v1";
+const PARKED_KEY = "kinkan-parked-v1";
 
 // ================= الحالة =================
-let state = null; // {players:[{pid,name,total}], rounds:[...], finished:bool, gameId}
+let state = null; // {players:[{pid,name,total,base}], rounds:[...], finished:bool, gameId}
 let selectedCount = 0;
 let profiles = loadJSON(PROF_KEY, []); // [{id,name}]
 let games = loadJSON(GAMES_KEY, []);   // أرشيف الألعاب المنتهية
+let parked = loadJSON(PARKED_KEY, []); // جلسات غير مكتملة محفوظة جانباً
 
 // ================= أدوات =================
 const $ = id => document.getElementById(id);
@@ -409,11 +439,13 @@ function checkStart(){
 }
 
 $("startBtn").onclick = ()=>{
-  if(state && !state.finished && !confirm("فيه لعبة شغالة حالياً — بدء جلسة جديدة بينهيها ويستبدلها عند الجميع. نكمل؟")) return;
+  if(state && !state.finished && state.rounds && state.rounds.length &&
+     !confirm("فيه لعبة شغالة حالياً — بتنحفظ في «الجلسات المحفوظة» وتقدر تكمّلها لاحقاً. نبدأ جلسة جديدة؟")) return;
+  parkCurrentIfWorth(); // احفظ الجارية جانباً بدل ما تُفقد
   const pids = selPids.slice(0,selectedCount);
   saveJSON(LAST_KEY, {count:selectedCount, pids}); // تذكّر آخر مجموعة
   state = {
-    players: pids.map(pid=>({pid, name: profName(pid), total:0})),
+    players: pids.map(pid=>({pid, name: profName(pid), total:0, base:0})),
     rounds:[], finished:false, gameId: uid()
   };
   touchSession(); save(); cloudPush(); renderGame(); show("game");
@@ -458,6 +490,55 @@ function unarchiveGame(){
   const before = games.length;
   games = games.filter(g=>g.id!==state.gameId);
   if(games.length!==before) saveJSON(GAMES_KEY, games);
+}
+
+// ================= الجلسات المحفوظة (غير المكتملة) =================
+// احفظ الجلسة الحالية جانباً إن كانت غير مكتملة وفيها تسجيل (حتى لا تُفقد)
+function parkCurrentIfWorth(){
+  if(state && !state.finished && state.rounds && state.rounds.length){
+    const copy = JSON.parse(JSON.stringify(state));
+    if(!copy.gameId) copy.gameId = uid();
+    copy.savedAt = new Date().toISOString();
+    parked = parked.filter(s=>s.gameId!==copy.gameId);
+    parked.push(copy);
+    touchParked();
+  }
+}
+function resumeParked(gameId){
+  const s = parked.find(x=>x.gameId===gameId);
+  if(!s) return;
+  parkCurrentIfWorth();                       // احفظ الجارية أولاً
+  parked = parked.filter(x=>x.gameId!==gameId); // اسحب المُستكمَلة من المحفوظات
+  touchParked();
+  state = JSON.parse(JSON.stringify(s));
+  delete state.savedAt;
+  editIdx = null;
+  recomputeTotals();
+  touchSession(); save(); cloudPush();
+  renderGame(); show("game");
+}
+function deleteParked(gameId){
+  parked = parked.filter(x=>x.gameId!==gameId);
+  touchParked(); cloudPush();
+  renderSetup();
+}
+// إنهاء الجلسة الآن واحتسابها في الإحصائيات حتى لو لم تصل ٢٠٠٠
+function endSessionNow(){
+  if(!state || !state.rounds.length){ alert("لا توجد جولات لإنهائها"); return; }
+  if(!confirm("إنهاء الجلسة الآن واحتسابها في الإحصائيات؟ (الأول هو الأقل نقاطاً)")) return;
+  state.finished = true;
+  archiveGame();
+  touchSession(); save(); cloudPush();
+  renderOver(); show("over");
+}
+// إضافة لاعب على لعبة قائمة — يبدأ بمجموع الأخير (أعلى نقاط حالياً)
+function addPlayerMidGame(pid){
+  if(!state || state.finished) return;
+  if(state.players.some(p=>p.pid===pid)) return;
+  const startTotal = state.players.length ? Math.max(...state.players.map(p=>p.total)) : 0;
+  state.players.push({pid, name: profName(pid), total: startTotal, base: startTotal});
+  touchSession(); save(); cloudPush();
+  renderGame();
 }
 
 // ================= لوحة الإحصائيات =================
@@ -517,8 +598,32 @@ function renderDashboard(){
   }).join("");
 }
 
+function renderParked(){
+  const box = $("parkedList");
+  $("parkedCard").classList.toggle("hidden", !parked.length);
+  box.innerHTML = "";
+  if(!parked.length) return;
+  [...parked].sort((a,b)=>(b.savedAt||"").localeCompare(a.savedAt||"")).forEach(s=>{
+    const rounds = (s.rounds||[]).filter(r=>!r.penalty).length;
+    const names = (s.players||[]).map(p=>p.name).join(" · ");
+    const d = s.savedAt ? new Date(s.savedAt) : null;
+    const ds = d ? (d.toLocaleDateString("ar-SA",{day:"numeric",month:"short"})+" "+d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})) : "";
+    const div = document.createElement("div");
+    div.className = "parked";
+    div.innerHTML = `<div class="parked-top">
+        <div><div class="parked-info">${esc(names)}</div>
+          <div class="parked-sub">${(s.players||[]).length} لاعبين · ${rounds} جولة · ${ds}</div></div>
+        <div class="parked-btns"><button class="resume">▶️ استكمال</button><button class="del">🗑</button></div>
+      </div>`;
+    div.querySelector(".resume").onclick = ()=> resumeParked(s.gameId);
+    div.querySelector(".del").onclick = ()=>{ if(confirm("حذف هذه الجلسة المحفوظة نهائياً؟")) deleteParked(s.gameId); };
+    box.appendChild(div);
+  });
+}
+
 function renderSetup(){
   renderProfiles();
+  renderParked();
   restoreLastSetup();
   buildPlayerSelects(selectedCount);
   renderDashboard();
@@ -713,12 +818,16 @@ const FB_CONFIG = {
   appId: "1:952954580308:web:6f59d4d785ecb08e2a2cc1"
 };
 const SESSAT_KEY = "kinkan-session-at-v1";
+const PARKEDAT_KEY = "kinkan-parked-at-v1";
 let sessionAt = +(localStorage.getItem(SESSAT_KEY) || 0); // طابع زمني لآخر تعديل محلي للجلسة
+let parkedAt = +(localStorage.getItem(PARKEDAT_KEY) || 0); // طابع زمني للجلسات المحفوظة
 const cloud = { db:null, fns:null, ready:false, firstSync:true };
 
 function setSessionAt(t){ sessionAt = t; try{ localStorage.setItem(SESSAT_KEY, String(t)); }catch(e){} }
+function setParkedAt(t){ parkedAt = t; try{ localStorage.setItem(PARKEDAT_KEY, String(t)); }catch(e){} }
 // يُنادى عند كل تعديل محلي حقيقي للجلسة (بدء/تسجيل/تعديل/غرامة/إنهاء/مسح)
 function touchSession(){ setSessionAt(Date.now()); }
+function touchParked(){ setParkedAt(Date.now()); saveJSON(PARKED_KEY, parked); }
 
 function setCloudStatus(t){ const el=$("dbStatus"); if(el) el.textContent = t; }
 function arrFromObj(o){ return o ? Object.values(o) : []; }
@@ -733,6 +842,8 @@ function cloudPush(){
     games: objBy(games, "id"),
     session: state,
     sessionAt: sessionAt,
+    parked: objBy(parked, "gameId"),
+    parkedAt: parkedAt,
     updated: new Date().toISOString()
   }).catch(()=>{});
 }
@@ -787,7 +898,22 @@ function reconcileSession(rs, rAt){
     if(state) save(); else localStorage.removeItem(STORE_KEY);
     return "adopted";
   }
-  return "kept";                // جلستنا المحلية أحدث → نحتفظ بها ونرفعها
+  if(rAt < sessionAt) return "kept"; // جلستنا أحدث → نحتفظ بها ونرفعها
+  return "same";                     // نفس الطابع الزمني — لا ترفع (تفادي الحلقة)
+}
+
+// الجلسات المحفوظة: الأحدث زمنياً يفوز (مثل الجلسة الحيّة)
+function reconcileParked(rpk, rAt){
+  const norm = arr => (arr||[]).map(s=>normSession(JSON.parse(JSON.stringify(s)))).filter(Boolean)
+                        .sort((a,b)=>(a.gameId||"").localeCompare(b.gameId||""));
+  const remote = norm(rpk), localN = norm(parked);
+  if(JSON.stringify(remote) === JSON.stringify(localN)){
+    if(rAt > parkedAt) setParkedAt(rAt);
+    return "same";
+  }
+  if(rAt > parkedAt){ parked = remote; setParkedAt(rAt); saveJSON(PARKED_KEY, parked); return "adopted"; }
+  if(rAt < parkedAt) return "kept";
+  return "same";
 }
 
 function handleRemote(v){
@@ -795,6 +921,8 @@ function handleRemote(v){
   const rg = arrFromObj(v.games);
   const rs = normSession(v.session || null);
   const rAt = +(v.sessionAt || 0);
+  const rpk = arrFromObj(v.parked);
+  const rpkAt = +(v.parkedAt || 0);
 
   if(cloud.firstSync){
     cloud.firstSync = false;
@@ -817,8 +945,9 @@ function handleRemote(v){
     rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
     saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
     const res = reconcileSession(rs, rAt);
-    // ارفع فقط إذا كانت جلستنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
-    if(res === "kept" || localExtra) cloudPush();
+    const pres = reconcileParked(rpk, rpkAt);
+    // ارفع فقط إذا كانت جلستنا/محفوظاتنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
+    if(res === "kept" || pres === "kept" || localExtra) cloudPush();
     refreshVisible(res === "adopted");
     return;
   }
@@ -827,7 +956,8 @@ function handleRemote(v){
   profiles = rp; games = rg;
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
   const res = reconcileSession(rs, rAt);
-  if(res === "kept") cloudPush();   // جلستنا أحدث → أعد تأكيدها في القاعدة
+  const pres = reconcileParked(rpk, rpkAt);
+  if(res === "kept" || pres === "kept") cloudPush();  // نسختنا أحدث → أعد تأكيدها
   refreshVisible(res === "adopted");
 }
 
@@ -878,11 +1008,18 @@ function renderGame(){
   }
   $("applyBtn").textContent = editingRound ? "💾 حفظ التعديل" : "احتساب الجولة";
   $("penBtn").textContent = editingPen ? "💾 حفظ التعديل" : "إضافة";
+  // إضافة لاعب متاحة فقط خارج وضع التعديل
+  const editing = editIdx!==null;
+  $("addPlayerBtn").classList.toggle("hidden", editing || !$("addPlayerRow").classList.contains("hidden"));
+  if(editing){ $("addPlayerRow").classList.add("hidden"); }
 }
 
 function recomputeTotals(){
-  state.players.forEach(p=>p.total=0);
-  state.rounds.forEach(r=>r.deltas.forEach((d,i)=>state.players[i].total+=d));
+  // كل لاعب يبدأ من رصيده الأساسي (base) — صفر للأصليين، ومجموع الأخير لمن دخل أثناء اللعب
+  state.players.forEach(p=>p.total = p.base||0);
+  state.rounds.forEach(r=>r.deltas.forEach((d,i)=>{
+    if(i<state.players.length && d!=null) state.players[i].total += d;
+  }));
 }
 
 // بعد أي إضافة/تعديل/حذف: إعادة الحساب وتحديد الشاشة المناسبة
@@ -911,6 +1048,39 @@ function cancelEdit(){
   if(state.finished){ renderOver(); show("over"); }
   else renderGame();
 }
+
+// ---- إضافة لاعب على لعبة قائمة ----
+function openAddPlayer(){
+  const avail = profiles.filter(p=>!state.players.some(pl=>pl.pid===p.id));
+  $("addPlayerErr").textContent = "";
+  let html = `<option value="">— اختر لاعباً —</option>`;
+  avail.forEach(p=> html += `<option value="${p.id}">${esc(p.name)}</option>`);
+  html += `<option value="__new__">➕ لاعب جديد</option>`;
+  $("addPlayerSel").innerHTML = html;
+  $("addPlayerRow").classList.remove("hidden");
+  $("addPlayerBtn").classList.add("hidden");
+}
+function closeAddPlayer(){
+  $("addPlayerRow").classList.add("hidden");
+  $("addPlayerBtn").classList.remove("hidden");
+  $("addPlayerErr").textContent = "";
+}
+$("addPlayerBtn").onclick = openAddPlayer;
+$("addPlayerCancel").onclick = closeAddPlayer;
+$("addPlayerDo").onclick = ()=>{
+  let pid = $("addPlayerSel").value;
+  if(pid==="__new__"){
+    const name = prompt("اسم اللاعب الجديد:");
+    if(!name || !name.trim()) return;
+    const p = addProfile(name);
+    pid = p ? p.id : "";
+  }
+  if(!pid){ $("addPlayerErr").textContent = "اختر لاعباً"; return; }
+  if(state.players.some(pl=>pl.pid===pid)){ $("addPlayerErr").textContent = "اللاعب موجود بالجلسة"; return; }
+  addPlayerMidGame(pid);
+  closeAddPlayer();
+};
+$("endSessionBtn").onclick = endSessionNow;
 
 $("entryEditCancel").onclick = cancelEdit;
 $("penEditCancel").onclick = cancelEdit;
@@ -1080,7 +1250,10 @@ $("undoBtn").onclick = ()=>{
 };
 
 $("resetBtn").onclick = ()=>{
-  if(!confirm("بدء جلسة جديدة؟ سيتم مسح التسجيل الحالي.")) return;
+  const worth = state && !state.finished && state.rounds && state.rounds.length;
+  if(!confirm(worth ? "الرجوع للرئيسية لبدء جلسة جديدة؟ الجلسة الحالية بتنحفظ في «الجلسات المحفوظة»."
+                    : "الرجوع للصفحة الرئيسية؟")) return;
+  parkCurrentIfWorth();
   state = null; editIdx = null;
   localStorage.removeItem(STORE_KEY);
   touchSession(); cloudPush();
@@ -1096,7 +1269,10 @@ function renderHistory(container, editable){
   let roundNum = 0;
   state.rounds.forEach((r,ri)=>{
     html += `<tr><td>${r.penalty ? '⚖️' : ++roundNum}</td>`;
-    r.deltas.forEach((d,i)=>{
+    // عمود لكل لاعب حالي — واللاعب الذي لم يشارك بجولة قديمة يظهر "—"
+    state.players.forEach((p,i)=>{
+      const d = r.deltas[i];
+      if(d===undefined || d===null){ html += `<td class="pos">—</td>`; return; }
       const win = i===r.winner;
       const txt = r.penalty && d===0 ? '—' : `${win?'🏆 ':''}${d>0?'+':''}${d}`;
       html += `<td class="${d<0?'neg':'pos'}">${txt}</td>`;
@@ -1133,7 +1309,7 @@ function renderOver(){
 }
 
 $("rematchBtn").onclick = ()=>{
-  state.players.forEach(p=>p.total=0);
+  state.players.forEach(p=>{ p.total=0; p.base=0; }); // لعبة جديدة → لا رصيد سابق
   state.rounds = [];
   state.finished = false;
   state.gameId = uid(); // لعبة جديدة بأرشيف مستقل
