@@ -105,6 +105,8 @@
   .prof{display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--line);
     border-radius:10px;padding:8px 12px;font-weight:700;font-size:14.5px;}
   .prof button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;}
+  .wbtn{background:transparent;border:1px solid var(--line);border-radius:7px;color:var(--muted);
+    cursor:pointer;font-size:13px;padding:2px 6px;}
   .names select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);
     background:var(--card2);color:var(--text);font-size:16px;appearance:none;}
   .names select:invalid, .names select.empty{color:var(--muted);}
@@ -179,7 +181,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٥</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٦</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -362,6 +364,8 @@ $("addProfBtn").onclick = ()=>{
 };
 $("newProfName").onkeydown = e=>{ if(e.key==="Enter") $("addProfBtn").click(); };
 
+const DELETE_CODE = "1985"; // رمز حماية حذف اللاعب
+
 function renderProfiles(){
   const box = $("profList");
   if(!profiles.length){
@@ -372,17 +376,44 @@ function renderProfiles(){
   profiles.forEach(p=>{
     const d = document.createElement("div");
     d.className = "prof";
-    d.innerHTML = `<span>👤 ${esc(p.name)}</span><button title="حذف">✕</button>`;
-    d.querySelector("button").onclick = ()=>{
-      if(!confirm(`حذف اللاعب "${p.name}" من القائمة؟ (سجله التاريخي يبقى في الإحصائيات)`)) return;
-      profiles = profiles.filter(x=>x.id!==p.id);
-      saveJSON(PROF_KEY, profiles);
-      cloudPush();
-      renderProfiles();
-      buildPlayerSelects(selectedCount);
-    };
+    d.innerHTML = `<span>👤 ${esc(p.name)}</span>
+      <button class="pedit" title="تعديل الاسم">✏️</button>
+      <button class="pdel" title="حذف">✕</button>`;
+    d.querySelector(".pedit").onclick = ()=> renameProfile(p.id);
+    d.querySelector(".pdel").onclick = ()=> deleteProfile(p.id);
     box.appendChild(d);
   });
+}
+
+function renameProfile(id){
+  const p = profiles.find(x=>x.id===id); if(!p) return;
+  const name = prompt("تعديل اسم اللاعب:", p.name);
+  if(name===null) return;
+  const nm = name.trim();
+  if(!nm) return;
+  if(profiles.some(x=>x.id!==id && x.name===nm)){ alert("الاسم موجود من قبل"); return; }
+  p.name = nm;
+  // حدّث الاسم في كل مكان (الأرشيف، الجلسة الجارية، الجلسات المحفوظة)
+  games.forEach(g=> g.players.forEach(pl=>{ if(pl.pid===id) pl.name=nm; }));
+  parked.forEach(s=> (s.players||[]).forEach(pl=>{ if(pl.pid===id) pl.name=nm; }));
+  if(state) state.players.forEach(pl=>{ if(pl.pid===id) pl.name=nm; });
+  saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  if(state){ touchSession(); save(); }
+  touchParked();
+  cloudPush();
+  renderSetup();
+}
+
+function deleteProfile(id){
+  const p = profiles.find(x=>x.id===id); if(!p) return;
+  const code = prompt(`لحذف اللاعب "${p.name}" نهائياً، أدخل الرمز السري:`);
+  if(code===null) return;
+  if(code.trim() !== DELETE_CODE){ alert("الرمز غير صحيح ❌ — لم يُحذف اللاعب"); return; }
+  profiles = profiles.filter(x=>x.id!==id);
+  saveJSON(PROF_KEY, profiles);
+  cloudPush();
+  renderProfiles();
+  buildPlayerSelects(selectedCount);
 }
 
 // ================= شاشة الإعداد =================
@@ -471,14 +502,16 @@ function archiveGame(){
       p.pid = m ? m.id : null;
     }
   });
-  const sorted = [...state.players].sort((a,b)=>a.total-b.total);
+  // ترتيب تصاعدي بالنقاط، والمنسحب يأتي أخيراً عند التساوي
+  const sorted = [...state.players].sort((a,b)=> a.total-b.total || (a.out?1:0)-(b.out?1:0));
   const rec = {
     id: state.gameId,
     date: new Date().toISOString(),
     rounds: state.rounds.filter(r=>!r.penalty).length,
     players: state.players.map(p=>({
       pid: p.pid || null, name: p.name, total: p.total,
-      rank: sorted.indexOf(p)+1
+      rank: sorted.indexOf(p)+1,
+      withdrew: !!p.out
     }))
   };
   games = games.filter(g=>g.id!==rec.id);
@@ -527,6 +560,7 @@ function endSessionNow(){
   if(!state || !state.rounds.length){ alert("لا توجد جولات لإنهائها"); return; }
   if(!confirm("إنهاء الجلسة الآن واحتسابها في الإحصائيات؟ (الأول هو الأقل نقاطاً)")) return;
   state.finished = true;
+  settleWithdrawn();
   archiveGame();
   touchSession(); save(); cloudPush();
   renderOver(); show("over");
@@ -650,12 +684,13 @@ function statsData(){
   const P = {}, order = [];
   gs.forEach(g=> g.players.forEach(pl=>{
     const k = pl.pid || "n:"+pl.name;
-    if(!P[k]){ P[k] = {key:k, name:pl.name, played:0, wins:0, lasts:0, pts:0, form:[]}; order.push(k); }
+    if(!P[k]){ P[k] = {key:k, name:pl.name, played:0, wins:0, lasts:0, pts:0, withdrawals:0, form:[]}; order.push(k); }
     const st = P[k];
     st.name = pl.name; st.played++; st.pts += pl.total;
     if(pl.rank===1) st.wins++;
     if(pl.rank===g.players.length) st.lasts++;
-    st.form.push(pl.rank===1 ? "🥇" : (pl.rank===g.players.length ? "💀" : "▫️"));
+    if(pl.withdrew) st.withdrawals++;
+    st.form.push(pl.withdrew ? "🚪" : (pl.rank===1 ? "🥇" : (pl.rank===g.players.length ? "💀" : "▫️")));
   }));
   order.forEach((k,i)=>{ P[k].color = SERIES[i % SERIES.length]; });
   order.forEach(k=>{
@@ -764,11 +799,15 @@ function renderStatsPage(){
   const totRounds = gs.reduce((a,g)=>a+(g.rounds||0),0);
   const champ = [...list].sort((a,b)=>b.wins-a.wins)[0];
   const goat  = [...list].sort((a,b)=>b.lasts-a.lasts)[0];
+  const quitter = [...list].sort((a,b)=>b.withdrawals-a.withdrawals)[0];
+  const quitTile = (quitter && quitter.withdrawals>0)
+    ? `<div class="hl"><div class="t">🚪 الأكثر انسحاباً</div><div class="v">${esc(quitter.name)}</div><div class="s">${quitter.withdrawals} مرة</div></div>` : "";
   const tiles = `<div class="card"><div class="hl-row" style="margin:0;">
     <div class="hl"><div class="t">🎮 الألعاب</div><div class="v">${gs.length}</div></div>
     <div class="hl"><div class="t">🔁 الجولات</div><div class="v">${totRounds}</div></div>
     <div class="hl"><div class="t">👑 الأكثر فوزاً</div><div class="v">${esc(champ.name)}</div><div class="s">${champ.wins} فوز</div></div>
     <div class="hl"><div class="t">💀 الأكثر أخيراً</div><div class="v">${esc(goat.name)}</div><div class="s">${goat.lasts} مرة</div></div>
+    ${quitTile}
   </div></div>`;
   const pct = (a,b)=> b? Math.round(a/b*100) : 0;
   const wins  = barCard("🥇 الانتصارات", "كم مرة خلّص أول (أقل نقاط)",
@@ -783,11 +822,15 @@ function renderStatsPage(){
   const points = barCard("🧮 إجمالي النقاط التاريخي", "مجموع كل النقاط المسجلة عليه — الأقل = الأفضل 😎",
     [...list].sort((a,b)=>a.pts-b.pts).map(p=>({...p, val:p.pts})),
     r=>`<b>${esc(r.name)}</b><br>الإجمالي: ${r.val}<br>المتوسط: ${Math.round(r.val/r.played)} نقطة/لعبة`);
+  const anyWithdrawals = list.some(p=>p.withdrawals>0);
+  const withdrawals = anyWithdrawals ? barCard("🚪 الأكثر انسحاباً", "مين ما يكمّل اللعب معنا للأخير",
+    [...list].sort((a,b)=>b.withdrawals-a.withdrawals).map(p=>({...p, val:p.withdrawals})),
+    r=>`<b>${esc(r.name)}</b><br>انسحب ${r.val} مرة من ${r.played} لعبة`) : "";
   const form = `<div class="card"><h2>🔥 الفورمة — آخر ٥ ألعاب</h2>
-    <p class="subnote" style="text-align:right;margin:0 0 4px;">الأحدث على اليمين · 🥇 أول · 💀 أخير · ▫️ وسط</p>
+    <p class="subnote" style="text-align:right;margin:0 0 4px;">الأحدث على اليمين · 🥇 أول · 💀 أخير · 🚪 انسحب · ▫️ وسط</p>
     ${list.map(p=>`<div class="form-row"><span class="bname">${esc(p.name)}</span>
       <span class="form-seq">${p.form.slice(-5).reverse().join(" ")}</span></div>`).join("")}</div>`;
-  box.innerHTML = tiles + wins + lasts + lineCard(gs, list) + points + form;
+  box.innerHTML = tiles + wins + lasts + lineCard(gs, list) + points + withdrawals + form;
   wireLineHover(gs, list);
 }
 
@@ -856,15 +899,19 @@ function normSession(st){
   st.rounds = st.rounds ? (Array.isArray(st.rounds) ? st.rounds : Object.values(st.rounds)) : [];
   st.finished = !!st.finished;
   st.rounds.forEach(r=>{
-    r.deltas = Array.isArray(r.deltas) ? r.deltas : Object.values(r.deltas||{});
     if(r.winner===undefined) r.winner = null;
     if(r.type===undefined) r.type = null;
     r.penalty = !!r.penalty;
-    const d = [];
+    // أعد بناء deltas و down حسب الفهرس — Firebase يحذف null من المصفوفات
+    const src = r.deltas;
+    const dd = [], dn = [];
     for(let i=0;i<st.players.length;i++){
-      d[i] = (r.down && r.down[i]!==undefined && r.down[i]!==null) ? r.down[i] : null;
+      const dv = Array.isArray(src) ? src[i] : (src ? src[i] : undefined);
+      dd[i] = (dv===undefined || dv===null) ? null : dv;
+      dn[i] = (r.down && r.down[i]!==undefined && r.down[i]!==null) ? r.down[i] : null;
     }
-    r.down = d;
+    r.deltas = dd;
+    r.down = dn;
   });
   return st;
 }
@@ -1025,9 +1072,9 @@ function recomputeTotals(){
 // بعد أي إضافة/تعديل/حذف: إعادة الحساب وتحديد الشاشة المناسبة
 function finishApply(){
   recomputeTotals();
-  state.finished = state.players.some(p=>p.total>=LIMIT);
-  if(state.finished) archiveGame();  // تسجيل اللعبة في الأرشيف
-  else unarchiveGame();              // تعديل ألغى النهاية → إزالة من الأرشيف
+  state.finished = state.players.some(p=>!p.out && p.total>=LIMIT);
+  if(state.finished){ settleWithdrawn(); archiveGame(); } // تسوية المنسحبين ثم الأرشفة
+  else unarchiveGame();                                    // تعديل ألغى النهاية → إزالة من الأرشيف
   touchSession();
   cloudPush();
   save();
@@ -1094,16 +1141,45 @@ $("entryEditDel").onclick = $("penEditDel").onclick = ()=>{
 function renderTotals(){
   const tb = $("totalsBody");
   tb.innerHTML = "";
-  const min = Math.min(...state.players.map(p=>p.total));
-  state.players.forEach(p=>{
+  const activeTotals = state.players.filter(p=>!p.out).map(p=>p.total);
+  const min = activeTotals.length ? Math.min(...activeTotals) : 0;
+  state.players.forEach((p,idx)=>{
     const tr = document.createElement("tr");
-    const pct = Math.min(100, Math.max(0, p.total/LIMIT*100));
-    const cls = p.total>=LIMIT*0.8 ? "danger" : (p.total===min ? "leader" : "");
-    tr.innerHTML = `<td class="name">${esc(p.name)}</td>
-      <td class="total ${cls}">${p.total}</td>
-      <td><div class="bar"><i class="${pct>=80?'hot':''}" style="width:${pct}%"></i></div></td>`;
+    if(p.out){
+      tr.innerHTML = `<td class="name" style="color:var(--muted)">${esc(p.name)}</td>
+        <td class="total" style="color:var(--muted)">${p.total}</td>
+        <td style="color:var(--muted);font-size:12px">🚪 منسحب</td>`;
+    } else {
+      const pct = Math.min(100, Math.max(0, p.total/LIMIT*100));
+      const cls = p.total>=LIMIT*0.8 ? "danger" : (p.total===min ? "leader" : "");
+      tr.innerHTML = `<td class="name">${esc(p.name)}</td>
+        <td class="total ${cls}">${p.total}</td>
+        <td><div style="display:flex;align-items:center;gap:6px;">
+          <div class="bar" style="flex:1"><i class="${pct>=80?'hot':''}" style="width:${pct}%"></i></div>
+          <button class="wbtn" data-i="${idx}" title="انسحاب من اللعبة">🚪</button>
+        </div></td>`;
+    }
     tb.appendChild(tr);
   });
+  tb.querySelectorAll(".wbtn").forEach(b=> b.onclick = ()=> withdrawPlayer(+b.dataset.i));
+}
+
+// انسحاب لاعب من اللعبة القائمة — يتوقف تسجيله، وعند النهاية يُحسب أخيراً
+function withdrawPlayer(idx){
+  const p = state.players[idx];
+  if(!p || p.out) return;
+  const activeCount = state.players.filter(x=>!x.out).length;
+  if(activeCount <= 2){ alert("لا يمكن الانسحاب — لازم يبقى لاعبان على الأقل. استخدم «إنهاء الجلسة» بدلاً من ذلك."); return; }
+  if(!confirm(`انسحاب ${p.name} من اللعبة؟ يتوقف تسجيل نقاطه، وعند انتهاء اللعبة يُحسب أخيراً في الإحصائيات.`)) return;
+  p.out = true;
+  touchSession(); save(); cloudPush();
+  renderGame();
+}
+// عند نهاية اللعبة: المنسحبون يأخذون نقاط الأخير (أعلى مجموع)
+function settleWithdrawn(){
+  const active = state.players.filter(p=>!p.out).map(p=>p.total);
+  const mx = active.length ? Math.max(...active) : 0;
+  state.players.forEach(p=>{ if(p.out) p.total = Math.max(mx, p.total); });
 }
 
 // حالة إدخال الجولة الحالية (غير محفوظة حتى الاحتساب)
@@ -1116,6 +1192,7 @@ function renderEntry(){
   $("entryErr").textContent = "";
   const src = (editIdx!==null && !state.rounds[editIdx].penalty) ? state.rounds[editIdx] : null;
   state.players.forEach((p,idx)=>{
+    if(p.out) return; // اللاعب المنسحب لا يُسجَّل في الجولات
     entry[idx] = src
       ? {finish: idx===src.winner ? src.type : null,
          down: src.down[idx]!=null,
@@ -1192,15 +1269,16 @@ $("applyBtn").onclick = ()=>{
       return;
     }
   }
-  // حساب النقاط
+  // حساب النقاط (المنسحبون لا يتأثرون → null)
   const deltas = state.players.map((p,i)=>{
+    if(p.out) return null;
     if(i===+winIdx) return -f.deduct;
     const e = entry[i];
     return e.down ? (+e.hand) * f.mult : f.flat;
   });
   const round = {
     winner:+winIdx, type:f.key, deltas,
-    down: state.players.map((_,i)=> i===+winIdx ? null : (entry[i].down ? +entry[i].hand : null))
+    down: state.players.map((p,i)=> (p.out || i===+winIdx) ? null : (entry[i].down ? +entry[i].hand : null))
   };
   if(editIdx!==null){ state.rounds[editIdx] = round; editIdx = null; }
   else state.rounds.push(round);
@@ -1218,6 +1296,7 @@ function renderPenalty(){
   const box = $("penChips");
   box.innerHTML = "";
   state.players.forEach((p,i)=>{
+    if(p.out) return; // المنسحب لا تُسجّل عليه غرامات
     const b = document.createElement("button");
     b.className = "chip" + (i===penPlayer ? " active" : "");
     b.textContent = p.name;
@@ -1292,7 +1371,7 @@ function renderHistory(container, editable){
 
 // ================= شاشة النهاية =================
 function renderOver(){
-  const sorted = state.players.map((p,i)=>({...p,i})).sort((a,b)=>a.total-b.total);
+  const sorted = state.players.map((p,i)=>({...p,i})).sort((a,b)=> a.total-b.total || (a.out?1:0)-(b.out?1:0));
   const medals = ["🥇","🥈","🥉"];
   const box = $("rankList");
   box.innerHTML = "";
@@ -1301,7 +1380,7 @@ function renderOver(){
     div.className = "rank" + (rank===0?" first":"") + (rank===sorted.length-1?" last":"");
     const medal = rank===sorted.length-1 ? "💀" : (medals[rank] || (rank+1));
     div.innerHTML = `<span class="medal">${medal}</span>
-      <span class="rname">${esc(p.name)}</span>
+      <span class="rname">${esc(p.name)}${p.out?' <span style="color:var(--muted);font-size:12px">🚪 منسحب</span>':''}</span>
       <span class="rpts">${p.total} نقطة</span>`;
     box.appendChild(div);
   });
@@ -1309,7 +1388,7 @@ function renderOver(){
 }
 
 $("rematchBtn").onclick = ()=>{
-  state.players.forEach(p=>{ p.total=0; p.base=0; }); // لعبة جديدة → لا رصيد سابق
+  state.players.forEach(p=>{ p.total=0; p.base=0; p.out=false; }); // لعبة جديدة → لا رصيد ولا انسحاب
   state.rounds = [];
   state.finished = false;
   state.gameId = uid(); // لعبة جديدة بأرشيف مستقل
