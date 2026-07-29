@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٦</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٧</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -239,7 +239,9 @@
       <h2>🎙️ صوت الإعلان (اختياري)</h2>
       <p class="subnote" style="text-align:right;">للحصول على صوت بشري طبيعي، الصق مفتاح ElevenLabs. يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد. بدونه يُستخدم صوت المتصفح المجاني تلقائياً.<br>🗣️ <b>للهجة سعودية:</b> اختر صوتاً «Saudi/Gulf» من Voice Library في ElevenLabs، والصق معرّفه (Voice ID) في الخانة الثانية.</p>
       <input type="password" id="voiceKeyInput" placeholder="مفتاح ElevenLabs API" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:6px;">
-      <input type="text" id="voiceIdInput" placeholder="معرّف الصوت — Voice ID (للهجة سعودية)" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;direction:ltr;text-align:left;">
+      <button class="btn btn-ghost" id="loadVoicesBtn" style="font-size:14px;">📥 جلب أصواتي من ElevenLabs</button>
+      <select id="voiceSelect" class="hidden" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;"></select>
+      <input type="text" id="voiceIdInput" placeholder="أو الصق معرّف الصوت — Voice ID" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;direction:ltr;text-align:left;">
       <div class="rowbtns">
         <button class="btn btn-gold" id="voiceSaveBtn">💾 حفظ</button>
         <button class="btn btn-ghost" id="voiceTestBtn">🔊 اختبار</button>
@@ -1265,7 +1267,33 @@ $("announceBtnOver").onclick = announceStandings;
   });
   $("voiceClearBtn") && ($("voiceClearBtn").onclick = ()=>{
     localStorage.removeItem(VOICE_KEY); $("voiceKeyInput").value=""; $("voiceIdInput").value="";
+    const sel=$("voiceSelect"); if(sel){ sel.innerHTML=""; sel.classList.add("hidden"); }
     msg("تم مسح المفتاح — سيُستخدم صوت المتصفح المجاني");
+  });
+  // جلب أصوات المستخدم من حسابه واختيار واحد منها
+  $("loadVoicesBtn") && ($("loadVoicesBtn").onclick = async ()=>{
+    const key = $("voiceKeyInput").value.trim();
+    if(!key){ msg("الصق مفتاح ElevenLabs أولاً"); return; }
+    saveJSON(VOICE_KEY, { key, voiceId: $("voiceIdInput").value.trim() });
+    msg("⏳ جاري جلب أصواتك…");
+    try{
+      const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers:{ "xi-api-key": key } });
+      if(!res.ok){ let d=""; try{d=JSON.stringify((await res.json()).detail||"");}catch(_){}
+        const e=new Error("v"); e.status=res.status; e.detail=d; throw e; }
+      const data = await res.json();
+      const vs = data.voices||[];
+      const sel = $("voiceSelect");
+      sel.innerHTML = '<option value="">— اختر صوتاً —</option>' +
+        vs.map(v=>{ const acc=(v.labels&&(v.labels.accent||v.labels.language))||v.category||"";
+          return `<option value="${v.voice_id}">${esc(v.name)}${acc?" — "+esc(acc):""}</option>`; }).join("");
+      sel.classList.remove("hidden");
+      const cur=getVoiceCfg().voiceId; if(cur) sel.value=cur;
+      msg("✅ اختر صوتاً من القائمة ثم اضغط اختبار ("+vs.length+" صوت)");
+    }catch(e){ msg(cloudErrMsg(e)); }
+  });
+  $("voiceSelect") && ($("voiceSelect").onchange = ()=>{
+    const v=$("voiceSelect").value;
+    if(v){ $("voiceIdInput").value=v; saveJSON(VOICE_KEY, { key:$("voiceKeyInput").value.trim(), voiceId:v }); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
   });
   $("voiceTestBtn") && ($("voiceTestBtn").onclick = async ()=>{
     audioUnlock();
