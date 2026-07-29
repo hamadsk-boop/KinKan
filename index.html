@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٠</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١١</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -959,54 +959,129 @@ function roundRectPath(ctx,x,y,w,h,r){
   ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
+const IMG_W=820, IMG_M=14, IMG_P=20;
+function imgCardBG(ctx,y,h){
+  ctx.fillStyle="#14311f"; roundRectPath(ctx,IMG_M,y,IMG_W-2*IMG_M,h,16); ctx.fill();
+  ctx.strokeStyle="#2b5a3c"; ctx.lineWidth=1.5; ctx.stroke();
+}
+function imgTitle(ctx,y,txt){
+  ctx.direction="rtl"; ctx.textAlign="right"; ctx.textBaseline="top";
+  ctx.fillStyle="#e8c765"; ctx.font="bold 20px system-ui,-apple-system,sans-serif";
+  ctx.fillText(txt, IMG_W-IMG_M-IMG_P, y);
+}
+// بطاقة رسم أعمدة أفقي على الكانفس
+function imgBarCard(ctx,y,title,rows){
+  const n=rows.length, RH=36, innerH=32 + n*RH;
+  const h=innerH+2*IMG_P;
+  imgCardBG(ctx,y,h);
+  imgTitle(ctx,y+IMG_P,title);
+  let yy=y+IMG_P+34;
+  const max=Math.max(...rows.map(r=>Math.abs(r.val)),1);
+  const nameRight=IMG_W-IMG_M-IMG_P, trackRight=nameRight-130, trackLeft=IMG_M+IMG_P+56, trackW=trackRight-trackLeft;
+  rows.forEach(r=>{
+    const cy=yy+RH/2;
+    ctx.textBaseline="middle";
+    ctx.direction="rtl"; ctx.textAlign="right"; ctx.fillStyle="#eef5ef"; ctx.font="bold 16px system-ui,sans-serif";
+    ctx.fillText(r.name, nameRight, cy);
+    ctx.fillStyle="#1b3d28"; roundRectPath(ctx,trackLeft,cy-9,trackW,18,6); ctx.fill();
+    const fw=Math.max(4, Math.abs(r.val)/max*trackW);
+    ctx.fillStyle=r.color; roundRectPath(ctx,trackRight-fw,cy-9,fw,18,6); ctx.fill();
+    ctx.direction="ltr"; ctx.textAlign="left"; ctx.fillStyle="#eef5ef"; ctx.font="15px system-ui,sans-serif";
+    ctx.fillText(String(r.val), IMG_M+IMG_P, cy);
+    yy+=RH;
+  });
+  ctx.textBaseline="top";
+  return y+h+IMG_M;
+}
+// بطاقة الرسم الخطي التراكمي
+function imgLineCard(ctx,y,gs,list){
+  const titleH=32, legendH=26, chartH=280;
+  const innerH=titleH+legendH+chartH, h=innerH+2*IMG_P;
+  imgCardBG(ctx,y,h);
+  imgTitle(ctx,y+IMG_P,"📈 رحلة النقاط التراكمية (الأنزل أفضل)");
+  // وسيلة الإيضاح
+  let lx=IMG_W-IMG_M-IMG_P; const ly=y+IMG_P+titleH+10;
+  ctx.textBaseline="middle"; ctx.direction="rtl"; ctx.textAlign="right"; ctx.font="13px system-ui,sans-serif";
+  list.forEach(p=>{
+    const tw=ctx.measureText(p.name).width;
+    ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(lx-5,ly,5,0,7); ctx.fill();
+    ctx.fillStyle="#9db8a6"; ctx.fillText(p.name, lx-15, ly);
+    lx-=(tw+34);
+  });
+  // منطقة الرسم
+  const ax0=IMG_M+IMG_P+46, ax1=IMG_W-IMG_M-IMG_P-8;
+  const ay0=y+IMG_P+titleH+legendH+4, ay1=ay0+chartH-26;
+  const N=gs.length;
+  const maxY=Math.max(...list.flatMap(p=>p.cum),1);
+  const X=i=> N<=1 ? (ax0+ax1)/2 : ax0 + i*(ax1-ax0)/(N-1);
+  const Y=v=> ay1 - v/maxY*(ay1-ay0);
+  const pw=Math.pow(10,Math.floor(Math.log10(maxY)));
+  const step=pw/(maxY/pw>=5?1:2);
+  ctx.strokeStyle="#2b5a3c"; ctx.lineWidth=1; ctx.fillStyle="#9db8a6"; ctx.font="11px system-ui,sans-serif";
+  ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.direction="ltr";
+  for(let v=0; v<=maxY+1; v+=step){
+    const gy=Y(v);
+    ctx.beginPath(); ctx.moveTo(ax0,gy); ctx.lineTo(ax1,gy); ctx.stroke();
+    ctx.fillText(String(v), IMG_M+IMG_P, gy);
+  }
+  list.forEach(p=>{
+    ctx.strokeStyle=p.color; ctx.lineWidth=2.5; ctx.lineJoin="round"; ctx.beginPath();
+    p.cum.forEach((v,i)=>{ const px=X(i),py=Y(v); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+    ctx.stroke();
+    if(N<=16) p.cum.forEach((v,i)=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(X(i),Y(v),3.2,0,7); ctx.fill(); });
+  });
+  ctx.textBaseline="top";
+  return y+h+IMG_M;
+}
 function drawStatsImage(){
   const {gs, list} = statsData();
-  const rows = [...list].sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played));
-  const W=820, padding=28, headH=150, colH=52, rowH=46, footH=74;
-  const H = headH + colH + rows.length*rowH + footH;
-  const S=2; // دقة مضاعفة لوضوح على الجوال
-  const cv=document.createElement("canvas");
-  cv.width=W*S; cv.height=H*S;
-  const ctx=cv.getContext("2d"); ctx.scale(S,S);
-  ctx.fillStyle="#0d1f16"; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#14311f"; roundRectPath(ctx,12,12,W-24,H-24,18); ctx.fill();
-  ctx.strokeStyle="#2b5a3c"; ctx.lineWidth=1.5; ctx.stroke();
-  ctx.textBaseline="middle";
-  // العنوان
-  ctx.direction="rtl"; ctx.textAlign="center";
-  ctx.fillStyle="#e8c765"; ctx.font="bold 34px system-ui,-apple-system,'Segoe UI',sans-serif";
-  ctx.fillText("🂡 كنكان — الإحصائيات", W/2, 56);
-  ctx.fillStyle="#9db8a6"; ctx.font="16px system-ui,-apple-system,sans-serif";
-  const now=new Date();
-  ctx.fillText(filterLabel()+" · "+gs.length+" لعبة · "+now.toLocaleDateString("ar"), W/2, 92);
-  const nameRight=W-padding;
-  const cols=[
-    {h:"ألعاب",  x:500, get:r=>r.played, color:"#eef5ef"},
-    {h:"فوز",    x:400, get:r=>r.wins, color:"#4fca7e"},
-    {h:"أخير",   x:300, get:r=>r.lasts, color:"#e05a5a"},
-    {h:"انسحاب", x:196, get:r=>r.withdrawals, color:"#e8c765"},
-    {h:"متوسط",  x:86,  get:r=>Math.round(r.pts/r.played), color:"#eef5ef"},
-  ];
-  let y=headH;
-  // رؤوس الأعمدة
-  ctx.font="bold 17px system-ui,sans-serif"; ctx.fillStyle="#9db8a6";
-  ctx.direction="rtl"; ctx.textAlign="right"; ctx.fillText("اللاعب", nameRight, y);
-  ctx.textAlign="center"; cols.forEach(c=> ctx.fillText(c.h, c.x, y));
-  ctx.strokeStyle="#2b5a3c"; ctx.beginPath(); ctx.moveTo(padding,y+24); ctx.lineTo(W-padding,y+24); ctx.stroke();
-  y+=colH;
-  const medals=["🥇","🥈","🥉"];
-  rows.forEach((r,i)=>{
-    const cy=y+rowH/2-4;
-    if(i===0){ ctx.fillStyle="rgba(232,199,101,0.10)"; roundRectPath(ctx,padding-4,y-2,W-2*padding+8,rowH-6,8); ctx.fill(); }
-    ctx.direction="rtl"; ctx.textAlign="right"; ctx.font="bold 19px system-ui,sans-serif"; ctx.fillStyle="#eef5ef";
-    ctx.fillText((medals[i]||((i+1)+"."))+" "+r.name, nameRight, cy);
-    ctx.direction="ltr"; ctx.textAlign="center"; ctx.font="18px system-ui,sans-serif";
-    cols.forEach(c=>{ ctx.fillStyle=c.color; ctx.fillText(String(c.get(r)), c.x, cy); });
-    y+=rowH;
+  const S=2, W=IMG_W, MAXH=5000;
+  const big=document.createElement("canvas");
+  big.width=W*S; big.height=MAXH*S;
+  const ctx=big.getContext("2d"); ctx.scale(S,S);
+  ctx.fillStyle="#0d1f16"; ctx.fillRect(0,0,W,MAXH);
+  let y=IMG_M;
+  // ترويسة
+  imgCardBG(ctx,y,104);
+  ctx.direction="rtl"; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillStyle="#e8c765"; ctx.font="bold 32px system-ui,-apple-system,sans-serif";
+  ctx.fillText("🂡 كنكان — الإحصائيات", W/2, y+38);
+  ctx.fillStyle="#9db8a6"; ctx.font="16px system-ui,sans-serif";
+  ctx.fillText(filterLabel()+" · "+gs.length+" لعبة · "+new Date().toLocaleDateString("ar"), W/2, y+74);
+  ctx.textBaseline="top"; y+=104+IMG_M;
+  // بطاقات مختصرة (أرقام رئيسية)
+  const champ=[...list].sort((a,b)=>b.wins-a.wins)[0];
+  const goat=[...list].sort((a,b)=>b.lasts-a.lasts)[0];
+  const totRounds=gs.reduce((a,g)=>a+(g.rounds||0),0);
+  const tiles=[{t:"الألعاب",v:String(gs.length)},{t:"الجولات",v:String(totRounds)},
+    {t:"الأكثر فوزاً",v:champ.name,s:champ.wins+" فوز"},{t:"الأكثر أخيراً",v:goat.name,s:goat.lasts+" مرة"}];
+  const th=86; imgCardBG(ctx,y,th);
+  const cw=(W-2*IMG_M-2*IMG_P)/4;
+  tiles.forEach((tl,i)=>{
+    const cx=(W-IMG_M-IMG_P)-cw*(i+0.5);
+    ctx.direction="rtl"; ctx.textAlign="center"; ctx.textBaseline="top";
+    ctx.fillStyle="#9db8a6"; ctx.font="13px system-ui,sans-serif"; ctx.fillText(tl.t,cx,y+14);
+    ctx.fillStyle="#e8c765"; ctx.font="bold 21px system-ui,sans-serif"; ctx.fillText(tl.v,cx,y+36);
+    if(tl.s){ ctx.fillStyle="#9db8a6"; ctx.font="12px system-ui,sans-serif"; ctx.fillText(tl.s,cx,y+66); }
   });
-  ctx.direction="rtl"; ctx.textAlign="center"; ctx.fillStyle="#9db8a6"; ctx.font="14px system-ui,sans-serif";
-  ctx.fillText("تطبيق كنكان · hamadsk-boop.github.io/KinKan", W/2, H-38);
-  return cv;
+  y+=th+IMG_M;
+  // رسوم الأعمدة
+  y=imgBarCard(ctx,y,"🥇 الانتصارات",[...list].sort((a,b)=>b.wins-a.wins).map(p=>({name:p.name,val:p.wins,color:"#4fca7e"})));
+  y=imgBarCard(ctx,y,"💀 المركز الأخير",[...list].sort((a,b)=>b.lasts-a.lasts).map(p=>({name:p.name,val:p.lasts,color:"#e05a5a"})));
+  y=imgBarCard(ctx,y,"🧮 إجمالي النقاط (الأقل أفضل)",[...list].sort((a,b)=>a.pts-b.pts).map(p=>({name:p.name,val:p.pts,color:"#e8c765"})));
+  if(list.some(p=>p.withdrawals>0))
+    y=imgBarCard(ctx,y,"🚪 الأكثر انسحاباً",[...list].sort((a,b)=>b.withdrawals-a.withdrawals).map(p=>({name:p.name,val:p.withdrawals,color:"#5aa9e0"})));
+  // الرسم الخطي
+  y=imgLineCard(ctx,y,gs,list);
+  // تذييل
+  ctx.direction="rtl"; ctx.textAlign="center"; ctx.textBaseline="top";
+  ctx.fillStyle="#9db8a6"; ctx.font="13px system-ui,sans-serif";
+  ctx.fillText("تطبيق كنكان · hamadsk-boop.github.io/KinKan", W/2, y+2);
+  y+=26;
+  // قصّ الكانفس للارتفاع الفعلي
+  const out=document.createElement("canvas"); out.width=W*S; out.height=Math.ceil(y*S);
+  out.getContext("2d").drawImage(big, 0, 0);
+  return out;
 }
 function shareStatsImage(){
   if(!games.length){ alert("لا توجد ألعاب لتصديرها بعد"); return; }
