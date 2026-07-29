@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢١</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٢</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -341,7 +341,14 @@
 
     <div class="card">
       <h2>🎙️ صوت الإعلان</h2>
-      <p class="subnote" style="text-align:right;">اختر مزوّد الصوت والصق مفتاحه للحصول على صوت بشري طبيعي. المفتاح يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد. بدون مفتاح يُستخدم صوت المتصفح المجاني تلقائياً. لكل مزوّد مفتاحه الخاص.</p>
+      <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:6px;text-align:right;line-height:1.9;font-size:13px;">
+        <b style="color:var(--gold);">💡 أسهل صوت طبيعي — مجاني تماماً وبدون حساب أو مفتاح:</b><br>
+        من إعدادات الجهاز نفسه نزّل صوتاً عربياً بجودة عالية، وبيستخدمه التطبيق تلقائياً:<br>
+        📱 <b>آيفون/آيباد:</b> الإعدادات ← تسهيلات الاستخدام (Accessibility) ← المحتوى المنطوق (Spoken Content) ← الأصوات (Voices) ← العربية ← نزّل صوتاً «معزّز/Enhanced» (مثل «ماجد»).<br>
+        🤖 <b>أندرويد:</b> الإعدادات ← إمكانية الوصول ← إخراج تحويل النص إلى كلام ← نزّل حزمة صوت عربية.<br>
+        بعدها ما تحتاج تحط أي مفتاح هنا — بس اضغط «🔊 إعلان» وبيطلع بصوت أوضح.
+      </div>
+      <p class="subnote" style="text-align:right;">وإذا تبي صوتاً أرقى (خصوصاً <b>لهجة سعودية</b>)، اختر مزوّداً والصق مفتاحه. المفتاح يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد، ولكل مزوّد مفتاحه الخاص. (ملاحظة: OpenAI لا يعمل من المتصفح، وGoogle قد يطلب فوترة عبر موزّع محلي في السعودية.)</p>
 
       <label class="fld">مزوّد الصوت</label>
       <select id="voiceProvider" class="selfld">
