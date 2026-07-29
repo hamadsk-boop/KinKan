@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٣</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٤</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -348,7 +348,7 @@
         🤖 <b>أندرويد:</b> الإعدادات ← إمكانية الوصول ← إخراج تحويل النص إلى كلام ← نزّل حزمة صوت عربية.<br>
         بعدها ما تحتاج تحط أي مفتاح هنا — بس اضغط «🔊 إعلان» وبيطلع بصوت أوضح.
       </div>
-      <p class="subnote" style="text-align:right;">وإذا تبي صوتاً أرقى (خصوصاً <b>لهجة سعودية</b>)، اختر مزوّداً والصق مفتاحه. المفتاح يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد، ولكل مزوّد مفتاحه الخاص. (ملاحظة: OpenAI لا يعمل من المتصفح، وGoogle قد يطلب فوترة عبر موزّع محلي في السعودية.)</p>
+      <p class="subnote" style="text-align:right;">وإذا تبي صوتاً أرقى (خصوصاً <b>لهجة سعودية</b>)، اختر مزوّداً والصق مفتاحه مرة واحدة. <b style="color:var(--gold);">المفتاح يُشارَك تلقائياً مع كل الأجهزة</b> اللي تفتح نفس الاستراحة، فما تحتاج تعيد لصقه على كل جهاز. ⚠️ يعني أي أحد عنده رابط التطبيق يقدر يستخدم رصيد مفتاحك — استخدمه بين شبابكم فقط، ولو صار استهلاك غريب ألغِ المفتاح من موقع المزوّد. (ملاحظة: OpenAI لا يعمل من المتصفح، وGoogle قد يطلب فوترة عبر موزّع محلي في السعودية.)</p>
 
       <label class="fld">مزوّد الصوت</label>
       <select id="voiceProvider" class="selfld">
@@ -1412,19 +1412,23 @@ $("announceBtnOver").onclick = announceStandings;
   // القيم المحفوظة عند فتح الصفحة
   provEl.value = getVoiceCfg().provider;
   syncUI();
-  provEl.onchange = ()=>{ persist(); syncUI(); msg(""); };
+  // تُنادى بعد تبنّي إعداد صوت أحدث من جهاز آخر — نحدّث الواجهة إن كانت مفتوحة
+  window.refreshVoiceUI = ()=>{ provEl.value = getVoiceCfg().provider; syncUI(); };
+  provEl.onchange = ()=>{ persist(); touchVoice(); syncUI(); msg(""); };
   $("voiceSaveBtn").onclick = ()=>{
     persist();
+    touchVoice(); // شارك الإعداد مع كل الأجهزة عبر القاعدة
     const has = getVoiceCfg()[curProv()].key;
     syncUI();
-    msg(has ? "✅ تم الحفظ — سيُستخدم الصوت السحابي عند الإعلان" : "✅ تم — سيُستخدم صوت المتصفح المجاني");
+    msg(has ? "✅ تم الحفظ ومشاركته مع كل الأجهزة — سيُستخدم الصوت السحابي" : "✅ تم — سيُستخدم صوت المتصفح المجاني");
   };
   $("voiceClearBtn").onclick = ()=>{
     const c = getVoiceCfg(); const p = curProv();
     c[p].key = ""; if(p==="elevenlabs") c.elevenlabs.voiceId="";
     saveJSON(VOICE_KEY, c);
+    touchVoice(); // المسح يتوزّع أيضاً على كل الأجهزة
     syncUI();
-    msg("تم مسح مفتاح هذا المزوّد — سيُستخدم صوت المتصفح المجاني");
+    msg("تم مسح مفتاح هذا المزوّد من كل الأجهزة — سيُستخدم صوت المتصفح المجاني");
   };
   // ElevenLabs: جلب أصوات الحساب واختيار واحد
   $("loadVoicesBtn").onclick = async ()=>{
@@ -1449,7 +1453,7 @@ $("announceBtnOver").onclick = announceStandings;
   };
   $("voiceSelect").onchange = ()=>{
     const v=$("voiceSelect").value;
-    if(v){ $("voiceIdInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
+    if(v){ $("voiceIdInput").value=v; persist(); touchVoice(); msg("✅ تم اختيار الصوت ومشاركته — اضغط اختبار"); }
   };
   // Google: جلب الأصوات العربية واختيار واحد
   $("loadGVoicesBtn").onclick = async ()=>{
@@ -1478,7 +1482,7 @@ $("announceBtnOver").onclick = announceStandings;
   };
   $("gVoiceSelect").onchange = ()=>{
     const v=$("gVoiceSelect").value;
-    if(v){ $("gVoiceInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
+    if(v){ $("gVoiceInput").value=v; persist(); touchVoice(); msg("✅ تم اختيار الصوت ومشاركته — اضغط اختبار"); }
   };
   $("voiceTestBtn").onclick = async ()=>{
     audioUnlock();
@@ -1527,15 +1531,20 @@ const FB_CONFIG = {
 };
 const SESSAT_KEY = "kinkan-session-at-v1";
 const PARKEDAT_KEY = "kinkan-parked-at-v1";
+const VOICEAT_KEY = "kinkan-voice-at-v1";
 let sessionAt = +(localStorage.getItem(SESSAT_KEY) || 0); // طابع زمني لآخر تعديل محلي للجلسة
 let parkedAt = +(localStorage.getItem(PARKEDAT_KEY) || 0); // طابع زمني للجلسات المحفوظة
+let voiceAt = +(localStorage.getItem(VOICEAT_KEY) || 0);   // طابع زمني لإعداد الصوت المشترك
 const cloud = { db:null, fns:null, ready:false, firstSync:true };
 
 function setSessionAt(t){ sessionAt = t; try{ localStorage.setItem(SESSAT_KEY, String(t)); }catch(e){} }
 function setParkedAt(t){ parkedAt = t; try{ localStorage.setItem(PARKEDAT_KEY, String(t)); }catch(e){} }
+function setVoiceAt(t){ voiceAt = t; try{ localStorage.setItem(VOICEAT_KEY, String(t)); }catch(e){} }
 // يُنادى عند كل تعديل محلي حقيقي للجلسة (بدء/تسجيل/تعديل/غرامة/إنهاء/مسح)
 function touchSession(){ setSessionAt(Date.now()); }
 function touchParked(){ setParkedAt(Date.now()); saveJSON(PARKED_KEY, parked); }
+// يُنادى عند حفظ/مسح مفتاح الصوت — فيتشارك مع كل الأجهزة عبر القاعدة
+function touchVoice(){ setVoiceAt(Date.now()); if(cloud.ready) cloudPush(); }
 
 function setCloudStatus(t){ const el=$("dbStatus"); if(el) el.textContent = t; }
 function arrFromObj(o){ return o ? Object.values(o) : []; }
@@ -1552,6 +1561,8 @@ function cloudPush(){
     sessionAt: sessionAt,
     parked: objBy(parked, "gameId"),
     parkedAt: parkedAt,
+    voice: getVoiceCfg(),   // مفتاح/إعداد الصوت مشترك بين كل الأجهزة (اختيار المالك)
+    voiceAt: voiceAt,
     updated: new Date().toISOString()
   }).catch(()=>{});
 }
@@ -1614,6 +1625,23 @@ function reconcileSession(rs, rAt){
   return "same";                     // نفس الطابع الزمني — لا ترفع (تفادي الحلقة)
 }
 
+// إعداد الصوت المشترك: الأحدث زمنياً يفوز — فالمفتاح المُدخل من أي جهاز يصل للبقية
+function reconcileVoice(rv, rAt){
+  const remote = rv ? normVoiceCfg(rv) : null;
+  const local = getVoiceCfg();
+  if(remote && JSON.stringify(remote) === JSON.stringify(local)){
+    if(rAt > voiceAt) setVoiceAt(rAt);
+    return "same";
+  }
+  if(rAt > voiceAt){                 // القاعدة أحدث → نتبنّى إعداد الصوت
+    if(remote) saveJSON(VOICE_KEY, remote);
+    setVoiceAt(rAt);
+    return "adopted";
+  }
+  if(rAt < voiceAt) return "kept";   // إعدادنا أحدث → نرفعه
+  return "same";
+}
+
 // الجلسات المحفوظة: الأحدث زمنياً يفوز (مثل الجلسة الحيّة)
 function reconcileParked(rpk, rAt){
   const norm = arr => (arr||[]).map(s=>normSession(JSON.parse(JSON.stringify(s)))).filter(Boolean)
@@ -1635,6 +1663,8 @@ function handleRemote(v){
   const rAt = +(v.sessionAt || 0);
   const rpk = arrFromObj(v.parked);
   const rpkAt = +(v.parkedAt || 0);
+  const rv = v.voice || null;
+  const rvAt = +(v.voiceAt || 0);
 
   if(cloud.firstSync){
     cloud.firstSync = false;
@@ -1658,9 +1688,11 @@ function handleRemote(v){
     saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
     const res = reconcileSession(rs, rAt);
     const pres = reconcileParked(rpk, rpkAt);
-    // ارفع فقط إذا كانت جلستنا/محفوظاتنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
-    if(res === "kept" || pres === "kept" || localExtra) cloudPush();
+    const vres = reconcileVoice(rv, rvAt);
+    // ارفع فقط إذا كانت جلستنا/محفوظاتنا/صوتنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
+    if(res === "kept" || pres === "kept" || vres === "kept" || localExtra) cloudPush();
     refreshVisible(res === "adopted");
+    if(vres === "adopted" && window.refreshVoiceUI) window.refreshVoiceUI();
     return;
   }
 
@@ -1669,8 +1701,10 @@ function handleRemote(v){
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
   const res = reconcileSession(rs, rAt);
   const pres = reconcileParked(rpk, rpkAt);
-  if(res === "kept" || pres === "kept") cloudPush();  // نسختنا أحدث → أعد تأكيدها
+  const vres = reconcileVoice(rv, rvAt);
+  if(res === "kept" || pres === "kept" || vres === "kept") cloudPush();  // نسختنا أحدث → أعد تأكيدها
   refreshVisible(res === "adopted");
+  if(vres === "adopted" && window.refreshVoiceUI) window.refreshVoiceUI();
 }
 
 async function initCloud(){
