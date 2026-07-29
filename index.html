@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٢</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٣</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1182,7 +1182,6 @@ function announceStandings(){
     if(onend) u.onend = onend;
     speechSynthesis.speak(u);
   };
-  say("الترتيب الحالي.");
   sorted.forEach((p,i)=>{
     const rank = i+1, last = rank===n;
     const pos = last ? "الخشبية" : ("المركز " + (AR_ORD[rank]||rank));
