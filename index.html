@@ -144,6 +144,14 @@
   .addp-row{display:flex;gap:8px;margin-top:10px;}
   .addp-row select{flex:1;padding:10px;border-radius:9px;border:1px solid var(--line);
     background:var(--card2);color:var(--text);font-size:15px;appearance:none;}
+  /* stats filter */
+  .fbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+  .fbar button{border:1px solid var(--line);background:var(--card2);color:var(--muted);
+    border-radius:9px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;}
+  .fbar button.on{background:var(--gold);color:#20301c;border-color:var(--gold);}
+  .custom-range{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;color:var(--muted);font-size:13px;}
+  .custom-range input{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:14px;}
+  .custom-range button{border:none;background:var(--gold);color:#20301c;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;}
   /* stats page */
   .btn-back{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;
     padding:6px 14px;cursor:pointer;font-size:13.5px;}
@@ -183,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٩</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٠</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -287,6 +295,18 @@
           <button class="btn-back" id="exportStatsBtn">⬇️ CSV</button>
           <button class="btn-back" id="statsBack">→ رجوع</button>
         </span></h2>
+      <div class="fbar" id="statsFilterBar">
+        <button data-m="today">اليوم</button>
+        <button data-m="week">آخر ٧ أيام</button>
+        <button data-m="month">آخر ٣٠ يوم</button>
+        <button data-m="all" class="on">الكل</button>
+        <button data-m="custom">مخصص</button>
+      </div>
+      <div class="custom-range hidden" id="customRange">
+        <span>من</span><input type="date" id="fromDate">
+        <span>إلى</span><input type="date" id="toDate">
+        <button id="applyRange">عرض</button>
+      </div>
     </div>
     <div id="statsContent"></div>
   </section>
@@ -708,8 +728,38 @@ $("homePeek") && ($("homePeek").onclick = ()=>{ renderSetup(); show("setup"); wi
 // ألوان السلاسل: لوحة مصادق عليها للسطح الداكن، اللون يتبع اللاعب دائماً
 const SERIES = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"];
 
-function statsData(){
-  const gs = [...games].sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+// ================= فلتر الفترة الزمنية =================
+let statsFilter = { mode:"all", from:null, to:null };
+function filteredGames(){
+  const f = statsFilter;
+  if(f.mode==="all") return games;
+  let from=null, to=null;
+  const now=new Date();
+  if(f.mode==="today"){ from=new Date(now.getFullYear(),now.getMonth(),now.getDate()); }
+  else if(f.mode==="week"){ from=new Date(now); from.setDate(now.getDate()-6); from.setHours(0,0,0,0); }
+  else if(f.mode==="month"){ from=new Date(now); from.setDate(now.getDate()-29); from.setHours(0,0,0,0); }
+  else if(f.mode==="custom"){
+    from = f.from ? new Date(f.from+"T00:00:00") : null;
+    to   = f.to   ? new Date(f.to+"T23:59:59")   : null;
+  }
+  return games.filter(g=>{
+    const d=new Date(g.date);
+    if(from && d<from) return false;
+    if(to && d>to) return false;
+    return true;
+  });
+}
+function filterLabel(){
+  const f=statsFilter;
+  if(f.mode==="today") return "اليوم";
+  if(f.mode==="week")  return "آخر ٧ أيام";
+  if(f.mode==="month") return "آخر ٣٠ يوم";
+  if(f.mode==="custom") return `من ${f.from||"…"} إلى ${f.to||"…"}`;
+  return "كل الأيام";
+}
+
+function statsData(gamesArr){
+  const gs = [...(gamesArr||filteredGames())].sort((a,b)=> (a.date||"").localeCompare(b.date||""));
   const P = {}, order = [];
   gs.forEach(g=> g.players.forEach(pl=>{
     const k = pl.pid || "n:"+pl.name;
@@ -824,7 +874,12 @@ function renderStatsPage(){
     box.innerHTML = '<div class="card"><p class="subnote">لا توجد ألعاب منتهية بعد — خلصوا أول لعبة وتعالوا شوفوا اللوحة 🂡</p></div>';
     return;
   }
-  const {gs, list} = statsData();
+  const fg = filteredGames();
+  if(!fg.length){
+    box.innerHTML = `<div class="card"><p class="subnote">لا توجد ألعاب في هذه الفترة (${esc(filterLabel())}) — جرّب فترة أوسع.</p></div>`;
+    return;
+  }
+  const {gs, list} = statsData(fg);
   const totRounds = gs.reduce((a,g)=>a+(g.rounds||0),0);
   const champ = [...list].sort((a,b)=>b.wins-a.wins)[0];
   const goat  = [...list].sort((a,b)=>b.lasts-a.lasts)[0];
@@ -859,7 +914,8 @@ function renderStatsPage(){
     <p class="subnote" style="text-align:right;margin:0 0 4px;">الأحدث على اليمين · 🥇 أول · 💀 أخير · 🚪 انسحب · ▫️ وسط</p>
     ${list.map(p=>`<div class="form-row"><span class="bname">${esc(p.name)}</span>
       <span class="form-seq">${p.form.slice(-5).reverse().join(" ")}</span></div>`).join("")}</div>`;
-  box.innerHTML = tiles + wins + lasts + lineCard(gs, list) + points + withdrawals + form;
+  const periodBanner = `<div class="card" style="padding:11px 14px;"><p class="subnote" style="margin:0;text-align:right;">📅 الفترة: <b style="color:var(--gold)">${esc(filterLabel())}</b> · ${gs.length} لعبة</p></div>`;
+  box.innerHTML = periodBanner + tiles + wins + lasts + lineCard(gs, list) + points + withdrawals + form;
   wireLineHover(gs, list);
 }
 
@@ -867,8 +923,12 @@ function renderStatsPage(){
 function csvCell(v){ v = String(v==null?"":v); return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 function exportStats(){
   if(!games.length){ alert("لا توجد ألعاب لتصديرها بعد"); return; }
-  const {list} = statsData();
+  const fg = filteredGames();
+  if(!fg.length){ alert("لا توجد ألعاب في الفترة المحددة"); return; }
+  const {list} = statsData(fg);
   const rows = [];
+  rows.push(["إحصائيات كنكان — الفترة: "+filterLabel()]);
+  rows.push([]);
   rows.push(["اللاعب","عدد الألعاب","انتصارات","مراكز أخيرة","انسحابات","نسبة الفوز %","متوسط النقاط","إجمالي النقاط"]);
   [...list].sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played)).forEach(s=>{
     rows.push([s.name, s.played, s.wins, s.lasts, s.withdrawals,
@@ -877,7 +937,7 @@ function exportStats(){
   rows.push([]);
   rows.push(["سجل الألعاب"]);
   rows.push(["التاريخ","عدد اللاعبين","الجولات","الفائز","الأخير"]);
-  [...games].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).forEach(g=>{
+  [...fg].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).forEach(g=>{
     const w = g.players.find(p=>p.rank===1) || g.players[0];
     const l = g.players.find(p=>p.rank===g.players.length) || g.players[g.players.length-1];
     const d = new Date(g.date);
@@ -900,7 +960,7 @@ function roundRectPath(ctx,x,y,w,h,r){
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
 function drawStatsImage(){
-  const {list} = statsData();
+  const {gs, list} = statsData();
   const rows = [...list].sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played));
   const W=820, padding=28, headH=150, colH=52, rowH=46, footH=74;
   const H = headH + colH + rows.length*rowH + footH;
@@ -918,7 +978,7 @@ function drawStatsImage(){
   ctx.fillText("🂡 كنكان — الإحصائيات", W/2, 56);
   ctx.fillStyle="#9db8a6"; ctx.font="16px system-ui,-apple-system,sans-serif";
   const now=new Date();
-  ctx.fillText(now.toLocaleDateString("ar")+" · "+games.length+" لعبة", W/2, 92);
+  ctx.fillText(filterLabel()+" · "+gs.length+" لعبة · "+now.toLocaleDateString("ar"), W/2, 92);
   const nameRight=W-padding;
   const cols=[
     {h:"ألعاب",  x:500, get:r=>r.played, color:"#eef5ef"},
@@ -950,6 +1010,7 @@ function drawStatsImage(){
 }
 function shareStatsImage(){
   if(!games.length){ alert("لا توجد ألعاب لتصديرها بعد"); return; }
+  if(!filteredGames().length){ alert("لا توجد ألعاب في الفترة المحددة"); return; }
   const cv = drawStatsImage();
   cv.toBlob(async (blob)=>{
     if(!blob){ alert("تعذّر إنشاء الصورة"); return; }
@@ -967,6 +1028,22 @@ function shareStatsImage(){
   }, "image/png");
 }
 $("shareImgBtn").onclick = shareStatsImage;
+
+// ---- أزرار فلتر الفترة ----
+$("statsFilterBar").querySelectorAll("button").forEach(b=>{
+  b.onclick = ()=>{
+    const m = b.dataset.m;
+    $("statsFilterBar").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    $("customRange").classList.toggle("hidden", m!=="custom");
+    if(m!=="custom"){ statsFilter = {mode:m, from:null, to:null}; renderStatsPage(); }
+  };
+});
+$("applyRange").onclick = ()=>{
+  const from = $("fromDate").value, to = $("toDate").value;
+  if(!from && !to){ alert("اختر تاريخاً واحداً على الأقل"); return; }
+  statsFilter = {mode:"custom", from: from||null, to: to||null};
+  renderStatsPage();
+};
 
 // ================= الإعلان الصوتي للترتيب =================
 const AR_ORD = ["","الأول","الثاني","الثالث","الرابع","الخامس","السادس","السابع","الثامن","التاسع","العاشر"];
