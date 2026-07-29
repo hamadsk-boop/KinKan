@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٠</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢١</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -346,7 +346,7 @@
       <label class="fld">مزوّد الصوت</label>
       <select id="voiceProvider" class="selfld">
         <option value="elevenlabs">ElevenLabs — أصوات بشرية واقعية</option>
-        <option value="openai">OpenAI — صوت طبيعي (يدعم العربية)</option>
+        <option value="google">Google — صوت عربي طبيعي (فيه باقة مجانية)</option>
       </select>
 
       <label class="fld">مفتاح API</label>
@@ -361,27 +361,12 @@
         <input type="text" id="voiceIdInput" class="selfld" placeholder="أو الصق معرّف الصوت — Voice ID" style="margin-top:8px;direction:ltr;text-align:left;">
       </div>
 
-      <!-- خيارات OpenAI -->
-      <div id="oaBlock" class="hidden">
-        <label class="fld">الصوت</label>
-        <select id="oaVoice" class="selfld">
-          <option value="alloy">Alloy</option>
-          <option value="ash">Ash</option>
-          <option value="ballad">Ballad</option>
-          <option value="coral">Coral</option>
-          <option value="echo">Echo</option>
-          <option value="fable">Fable</option>
-          <option value="nova">Nova</option>
-          <option value="onyx">Onyx</option>
-          <option value="sage">Sage</option>
-          <option value="shimmer">Shimmer</option>
-        </select>
-        <label class="fld">الجودة</label>
-        <select id="oaModel" class="selfld">
-          <option value="gpt-4o-mini-tts">طبيعي (gpt-4o-mini-tts)</option>
-          <option value="tts-1-hd">عالي (tts-1-hd)</option>
-          <option value="tts-1">سريع (tts-1)</option>
-        </select>
+      <!-- خيارات Google -->
+      <div id="gBlock" class="hidden">
+        <p class="subnote" style="text-align:right;">🗣️ Google يقرأ العربية الفصحى بصوت طبيعي (Wavenet/Chirp3-HD). اجلب الأصوات واختر واحداً — «Wavenet» و«Chirp3-HD» أكثرها طبيعية.</p>
+        <button class="btn btn-ghost" id="loadGVoicesBtn" style="font-size:14px;">📥 جلب الأصوات العربية من Google</button>
+        <select id="gVoiceSelect" class="selfld hidden" style="margin-top:8px;"></select>
+        <input type="text" id="gVoiceInput" class="selfld" placeholder="أو الصق اسم الصوت — مثال: ar-XA-Wavenet-B" style="margin-top:8px;direction:ltr;text-align:left;">
       </div>
 
       <div class="rowbtns" style="margin-top:14px;">
@@ -1245,17 +1230,18 @@ function standingLines(){
 // ---- الصوت السحابي (ElevenLabs) — اختياري، المفتاح على هذا الجهاز فقط ----
 const VOICE_KEY = "kinkan-voice-cfg-v1";
 const EL_DEFAULT_VOICE = "pNInz6obpgDQGcFmaJgB";
+const G_DEFAULT_VOICE = "ar-XA-Wavenet-B";
 // نموذج الإعداد مع دعم أكثر من مزوّد، ومع ترقية الإعداد القديم {key,voiceId}
 function normVoiceCfg(raw){
   raw = raw || {};
   const oldEl = ("key" in raw || "voiceId" in raw) ? { key:raw.key||"", voiceId:raw.voiceId||"" } : null;
   const el = raw.elevenlabs || oldEl || { key:"", voiceId:"" };
-  const oa = raw.openai || { key:"", voice:"alloy", model:"gpt-4o-mini-tts" };
-  const provider = (raw.provider==="openai") ? "openai" : "elevenlabs";
+  const g = raw.google || { key:"", voice:G_DEFAULT_VOICE };
+  const provider = (raw.provider==="google") ? "google" : "elevenlabs";
   return {
     provider,
     elevenlabs: { key: (el.key||"").trim(), voiceId: (el.voiceId||"").trim() },
-    openai: { key: (oa.key||"").trim(), voice: oa.voice||"alloy", model: oa.model||"gpt-4o-mini-tts" }
+    google: { key: (g.key||"").trim(), voice: (g.voice||G_DEFAULT_VOICE).trim() }
   };
 }
 function getVoiceCfg(){ return normVoiceCfg(loadJSON(VOICE_KEY, {})); }
@@ -1283,21 +1269,29 @@ async function elevenSpeak(text, el){
   }
   await playBlob(await res.blob());
 }
-async function openaiSpeak(text, oa){
-  const res = await fetch("https://api.openai.com/v1/audio/speech", {
+// تشغيل مقطع من رابط/داتا-URL وانتظار انتهائه
+async function playSrc(src){
+  const audio = new Audio(src);
+  await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); });
+}
+// Google Cloud Text-to-Speech — يعمل من المتصفح مباشرة (يدعم CORS)
+async function googleSpeak(text, g){
+  const res = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key="+encodeURIComponent(g.key), {
     method:"POST",
-    headers:{ "Authorization":"Bearer "+oa.key, "Content-Type":"application/json" },
-    body: JSON.stringify({ model: oa.model||"gpt-4o-mini-tts", voice: oa.voice||"alloy", input: text })
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ input:{ text }, voice:{ languageCode:"ar-XA", name: g.voice||G_DEFAULT_VOICE }, audioConfig:{ audioEncoding:"MP3" } })
   });
   if(!res.ok){
-    let detail=""; try{ const j=await res.clone().json(); detail=(j.error&&(j.error.message||j.error.code))||JSON.stringify(j); }catch(_){ try{ detail=await res.text(); }catch(e){} }
+    let detail=""; try{ const j=await res.clone().json(); detail=(j.error&&(j.error.message||j.error.status))||JSON.stringify(j); }catch(_){ try{ detail=await res.text(); }catch(e){} }
     throw ttsError(res, detail);
   }
-  await playBlob(await res.blob());
+  const j = await res.json();
+  if(!j.audioContent) throw ttsError({status:0}, "no audio");
+  await playSrc("data:audio/mp3;base64,"+j.audioContent);
 }
 async function cloudSpeak(text){
   const c = getVoiceCfg();
-  if(c.provider==="openai") return openaiSpeak(text, c.openai);
+  if(c.provider==="google") return googleSpeak(text, c.google);
   return elevenSpeak(text, c.elevenlabs);
 }
 // رسالة خطأ مفهومة حسب نوع المشكلة (مع إظهار السبب الحقيقي من ElevenLabs)
@@ -1305,10 +1299,15 @@ function cloudErrMsg(e){
   const s=e&&e.status; const d=((e&&e.detail)||"").toString(); const dl=d.toLowerCase();
   if(dl.includes("subscription")||dl.includes("paid")||dl.includes("upgrade")||dl.includes("tier")||dl.includes("professional"))
     return "⚠️ هذا الصوت يتطلب اشتراكاً مدفوعاً — جرّب صوتاً آخر أو اترك الخانة فارغة للصوت الافتراضي.";
-  if(dl.includes("insufficient_quota")||dl.includes("billing")) return "⚠️ لا يوجد رصيد في حساب المزوّد — تأكد من تفعيل الدفع/الرصيد.";
-  if(s===401||s===403 || dl.includes("api_key")||dl.includes("unauthor")||dl.includes("invalid")||dl.includes("incorrect")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
-  if(s===404 || dl.includes("voice_not_found")||dl.includes("not found")) return "⚠️ الصوت غير موجود بحسابك — أضِفه من Voice Library (Add to My Voices)";
-  if(s===429 || dl.includes("quota")||dl.includes("limit")||dl.includes("credit")) return "⚠️ نفد الرصيد الشهري لدى المزوّد";
+  if(dl.includes("has not been used")||dl.includes("api has not")||dl.includes("is disabled")||dl.includes("serviceusage")||dl.includes("accessnotconfigured"))
+    return "⚠️ لازم تفعّل خدمة Cloud Text-to-Speech في مشروع Google أولاً — افتح الرابط في رسالة الخطأ وفعّلها ثم أعد المحاولة.";
+  if(dl.includes("requires billing")||dl.includes("billing"))
+    return "⚠️ لازم تربط الفوترة (Billing) بمشروع Google — يكفي إضافة بطاقة، والباقة المجانية تغطيك.";
+  if(dl.includes("api key not valid")||dl.includes("api_key")||dl.includes("api key")) return "⚠️ مفتاح Google غير صحيح — انسخه كاملاً من صفحة Credentials.";
+  if(dl.includes("insufficient_quota")) return "⚠️ لا يوجد رصيد في حساب المزوّد — تأكد من تفعيل الدفع/الرصيد.";
+  if(s===401||s===403 || dl.includes("unauthor")||dl.includes("permission")||dl.includes("invalid")||dl.includes("incorrect")) return "⚠️ المفتاح غير صحيح أو غير مفعّل / غير مصرّح";
+  if(s===404 || dl.includes("voice_not_found")||dl.includes("not found")) return "⚠️ الصوت غير موجود — تأكد من اسم الصوت (مثال ar-XA-Wavenet-B) أو أضِفه من Voice Library.";
+  if(s===429 || dl.includes("quota")||dl.includes("limit")||dl.includes("credit")) return "⚠️ تجاوزت الحد المسموح — انتظر قليلاً أو راجع رصيد المزوّد";
   if(s===400) return "⚠️ رُفض الطلب" + (d?("، السبب: "+d.slice(0,140)):"");
   return "⚠️ تعذّر الصوت السحابي" + (s?(" (رمز "+s+")"):"") + (d?("، "+d.slice(0,120)):"");
 }
@@ -1349,7 +1348,7 @@ $("announceBtnOver").onclick = announceStandings;
   const provEl = $("voiceProvider");
   if(!provEl) return;
   // المزوّد المختار في الواجهة حالياً
-  const curProv = ()=> provEl.value==="openai" ? "openai" : "elevenlabs";
+  const curProv = ()=> provEl.value==="google" ? "google" : "elevenlabs";
   // المفتاح: المُدخل حديثاً أو المحفوظ لهذا المزوّد
   const curKey = ()=> $("voiceKeyInput").value.trim() || (getVoiceCfg()[curProv()].key || "");
   // اقرأ الواجهة وادمجها مع المحفوظ (لا نمسح مفتاح مزوّد آخر)
@@ -1360,8 +1359,7 @@ $("announceBtnOver").onclick = announceStandings;
     const typed = $("voiceKeyInput").value.trim();
     if(typed) c[p].key = typed; // لا نكتب فوق المفتاح المحفوظ إلا إذا لُصق جديد
     c.elevenlabs.voiceId = $("voiceIdInput").value.trim();
-    c.openai.voice = $("oaVoice").value;
-    c.openai.model = $("oaModel").value;
+    c.google.voice = $("gVoiceInput").value.trim() || G_DEFAULT_VOICE;
     saveJSON(VOICE_KEY, c);
   }
   // حالة المفتاح المعروضة + إظهار خانات المزوّد
@@ -1369,16 +1367,16 @@ $("announceBtnOver").onclick = announceStandings;
     const c = getVoiceCfg();
     const p = curProv();
     $("elBlock").classList.toggle("hidden", p!=="elevenlabs");
-    $("oaBlock").classList.toggle("hidden", p!=="openai");
+    $("gBlock").classList.toggle("hidden", p!=="google");
     $("voiceKeyInput").value = ""; // لا نعيد عرض المفتاح
     $("voiceKeyInput").placeholder = c[p].key ? "المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره" : "الصق المفتاح هنا";
     $("keyStatus").innerHTML = c[p].key
       ? "🔑 المفتاح محفوظ لهذا المزوّد ✓ — تقدر تلصق مفتاحاً جديداً لتغييره أو تمسحه."
       : "🔓 لا يوجد مفتاح محفوظ لهذا المزوّد — بدونه يُستخدم صوت المتصفح المجاني.";
     $("voiceIdInput").value = c.elevenlabs.voiceId || "";
-    $("oaVoice").value = c.openai.voice || "alloy";
-    $("oaModel").value = c.openai.model || "gpt-4o-mini-tts";
+    $("gVoiceInput").value = c.google.voice || G_DEFAULT_VOICE;
     const sel=$("voiceSelect"); if(sel){ sel.innerHTML=""; sel.classList.add("hidden"); }
+    const gsel=$("gVoiceSelect"); if(gsel){ gsel.innerHTML=""; gsel.classList.add("hidden"); }
   }
   // القيم المحفوظة عند فتح الصفحة
   provEl.value = getVoiceCfg().provider;
@@ -1421,6 +1419,35 @@ $("announceBtnOver").onclick = announceStandings;
   $("voiceSelect").onchange = ()=>{
     const v=$("voiceSelect").value;
     if(v){ $("voiceIdInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
+  };
+  // Google: جلب الأصوات العربية واختيار واحد
+  $("loadGVoicesBtn").onclick = async ()=>{
+    const key = curKey();
+    if(!key){ msg("الصق مفتاح Google أولاً"); return; }
+    persist();
+    msg("⏳ جاري جلب الأصوات العربية…");
+    try{
+      const res = await fetch("https://texttospeech.googleapis.com/v1/voices?languageCode=ar-XA&key="+encodeURIComponent(key));
+      if(!res.ok){ let d=""; try{ const j=await res.json(); d=(j.error&&(j.error.message||j.error.status))||""; }catch(_){}
+        const e=new Error("v"); e.status=res.status; e.detail=d; throw e; }
+      const data = await res.json();
+      const vs = (data.voices||[]).slice().sort((a,b)=>{
+        const rank=n=> n.includes("Chirp3")?0 : n.includes("Wavenet")?1 : n.includes("Neural")?2 : 3;
+        return rank(a.name)-rank(b.name) || a.name.localeCompare(b.name);
+      });
+      const gsel = $("gVoiceSelect");
+      const genAr = g=> g==="FEMALE"?"أنثى" : g==="MALE"?"ذكر" : "";
+      const qAr = n=> n.includes("Chirp3")?"طبيعي جداً" : n.includes("Wavenet")?"طبيعي" : n.includes("Neural")?"طبيعي" : "قياسي";
+      gsel.innerHTML = '<option value="">— اختر صوتاً —</option>' +
+        vs.map(v=>`<option value="${esc(v.name)}">${esc(v.name)} — ${qAr(v.name)}${v.ssmlGender?" · "+genAr(v.ssmlGender):""}</option>`).join("");
+      gsel.classList.remove("hidden");
+      const cur=getVoiceCfg().google.voice; if(cur) gsel.value=cur;
+      msg("✅ اختر صوتاً من القائمة ثم اضغط اختبار ("+vs.length+" صوت)");
+    }catch(e){ msg(cloudErrMsg(e)); }
+  };
+  $("gVoiceSelect").onchange = ()=>{
+    const v=$("gVoiceSelect").value;
+    if(v){ $("gVoiceInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
   };
   $("voiceTestBtn").onclick = async ()=>{
     audioUnlock();
