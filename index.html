@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٧</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٨</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1214,14 +1214,16 @@ async function cloudSpeak(text){
   try{ await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); }); }
   finally{ URL.revokeObjectURL(url); }
 }
-// رسالة خطأ مفهومة حسب نوع المشكلة
+// رسالة خطأ مفهومة حسب نوع المشكلة (مع إظهار السبب الحقيقي من ElevenLabs)
 function cloudErrMsg(e){
-  const s=e&&e.status, d=((e&&e.detail)||"").toString().toLowerCase();
-  if(s===401||s===403 || d.includes("api_key")||d.includes("unauthor")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
-  if(s===404 || d.includes("voice_not_found")||d.includes("not found")) return "⚠️ معرّف الصوت غير موجود بحسابك — أضِف الصوت من Voice Library بزر «Add to My Voices» ثم انسخ الـ Voice ID من My Voices";
-  if(s===400 || d.includes("voice")) return "⚠️ مشكلة في معرّف الصوت — تأكد أنك أضفت الصوت إلى My Voices ونسخت المعرّف الصحيح";
-  if(s===429 || d.includes("quota")||d.includes("limit")) return "⚠️ نفد رصيد ElevenLabs الشهري";
-  return "⚠️ تعذّر الصوت السحابي" + (s?(" (رمز "+s+")"):"");
+  const s=e&&e.status; const d=((e&&e.detail)||"").toString(); const dl=d.toLowerCase();
+  if(dl.includes("subscription")||dl.includes("paid")||dl.includes("upgrade")||dl.includes("tier")||dl.includes("plan")||dl.includes("professional"))
+    return "⚠️ هذا الصوت يتطلب اشتراكاً مدفوعاً في ElevenLabs — جرّب صوتاً آخر أو اترك الخانة فارغة للصوت الافتراضي.";
+  if(s===401||s===403 || dl.includes("api_key")||dl.includes("unauthor")||dl.includes("invalid")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
+  if(s===404 || dl.includes("voice_not_found")||dl.includes("not found")) return "⚠️ الصوت غير موجود بحسابك — أضِفه من Voice Library (Add to My Voices)";
+  if(s===429 || dl.includes("quota")||dl.includes("limit")||dl.includes("credit")) return "⚠️ نفد رصيد ElevenLabs الشهري";
+  if(s===400) return "⚠️ رُفض الطلب" + (d?("، السبب: "+d.slice(0,140)):"");
+  return "⚠️ تعذّر الصوت السحابي" + (s?(" (رمز "+s+")"):"") + (d?("، "+d.slice(0,120)):"");
 }
 // النطق المدمج (البديل المجاني)
 function browserSpeakSequence(lines, joke){
