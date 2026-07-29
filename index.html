@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٢</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٣</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1254,11 +1254,26 @@ function normVoiceCfg(raw){
 function getVoiceCfg(){ return normVoiceCfg(loadJSON(VOICE_KEY, {})); }
 // مفتاح المزوّد الحالي (لتحديد هل نستخدم الصوت السحابي أم المدمج)
 function activeVoiceKey(){ const c=getVoiceCfg(); return (c[c.provider] && c[c.provider].key) || ""; }
+// عنصر صوت واحد نعيد استخدامه لكل المقاطع.
+// مهم على iOS: المتصفح يفكّ قفل «هذا العنصر» عند أول تشغيل ضمن ضغطة المستخدم،
+// فلو أنشأنا عنصراً جديداً لكل مقطع (النشرة ثم النكتة) يُحجب الثاني — لذلك نعيد استخدام نفس العنصر.
+let _ttsEl = null;
+function ttsEl(){ if(!_ttsEl){ _ttsEl = new Audio(); _ttsEl.preload = "auto"; } return _ttsEl; }
+async function playSrc(src){
+  const a = ttsEl();
+  a.src = src;
+  try{ a.currentTime = 0; }catch(e){}
+  await new Promise((resolve,reject)=>{
+    a.onended = resolve;
+    a.onerror = ()=>reject(new Error("audio"));
+    const pr = a.play();
+    if(pr && pr.catch) pr.catch(reject);
+  });
+}
 // تشغيل مقطع صوتي من blob وانتظار انتهائه
 async function playBlob(blob){
   const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  try{ await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); }); }
+  try{ await playSrc(url); }
   finally{ URL.revokeObjectURL(url); }
 }
 function ttsError(res, detail){ const err=new Error("tts "+res.status); err.status=res.status; err.detail=detail||""; return err; }
@@ -1275,11 +1290,6 @@ async function elevenSpeak(text, el){
     throw ttsError(res, detail);
   }
   await playBlob(await res.blob());
-}
-// تشغيل مقطع من رابط/داتا-URL وانتظار انتهائه
-async function playSrc(src){
-  const audio = new Audio(src);
-  await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); });
 }
 // Google Cloud Text-to-Speech — يعمل من المتصفح مباشرة (يدعم CORS)
 async function googleSpeak(text, g){
@@ -1330,19 +1340,33 @@ function browserSpeakSequence(lines, joke){
   };
   lines.forEach(l=> say(l.text, l.last ? ()=>{ playSadTrombone(); setTimeout(()=>say(joke),1600); } : null));
 }
+// نطق جملة واحدة بالصوت المدمج (للنكتة فقط عند تعذّر السحابي بعد نجاح النشرة)
+function browserSpeakOne(text){
+  if(!("speechSynthesis" in window) || !text) return;
+  const voice = pickArVoice();
+  const u=new SpeechSynthesisUtterance(text); u.lang="ar-SA"; u.rate=0.95; u.pitch=1.0;
+  try{ if(voice) u.voice=voice; }catch(e){}
+  speechSynthesis.speak(u);
+}
 async function announceStandings(){
   if(!state || !state.players.length){ return; }
   audioUnlock();
   const lines = standingLines();
   const joke = JOKES[Math.floor(Math.random()*JOKES.length)];
   if(activeVoiceKey() && navigator.onLine){
+    let mainSpoken = false;
     try{
       await cloudSpeak(lines.map(l=>l.text).join(" "));
+      mainSpoken = true; // نُطقت النشرة بنجاح بالصوت السحابي
       playSadTrombone();
       await new Promise(r=>setTimeout(r,1500));
       await cloudSpeak(joke);
       return;
-    }catch(e){ /* عند أي خطأ: نسقط للصوت المدمج */ }
+    }catch(e){
+      // لو النشرة نُطقت فعلاً، لا نعيدها كاملة بالصوت المدمج — فقط النكتة تعذّرت
+      if(mainSpoken){ browserSpeakOne(joke); return; }
+      /* النشرة نفسها فشلت → نسقط للصوت المدمج الكامل */
+    }
   }
   browserSpeakSequence(lines, joke);
 }
