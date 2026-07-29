@@ -183,7 +183,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٧</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٨</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -232,7 +232,7 @@
   <!-- ========== شاشة اللعب ========== -->
   <section id="game" class="hidden">
     <div class="card">
-      <h2 class="hrow"><span>📊 التسجيل</span><span style="display:flex;gap:6px;"><button class="peek" id="homePeek">🏠 الرئيسية</button><button class="peek" id="statsPeek">📈 اللوحة</button></span></h2>
+      <h2 class="hrow"><span>📊 التسجيل</span><span style="display:flex;gap:6px;"><button class="peek" id="announceBtn">🔊 إعلان</button><button class="peek" id="homePeek">🏠</button><button class="peek" id="statsPeek">📈</button></span></h2>
       <table>
         <thead><tr><th style="text-align:right">اللاعب</th><th>النقاط</th><th style="width:35%">الوضع</th></tr></thead>
         <tbody id="totalsBody"></tbody>
@@ -281,7 +281,11 @@
   <!-- ========== صفحة الإحصائيات ========== -->
   <section id="stats" class="hidden">
     <div class="card">
-      <h2 class="hrow"><span>📊 لوحة الإحصائيات</span><button class="btn-back" id="statsBack">→ رجوع</button></h2>
+      <h2 class="hrow"><span>📊 لوحة الإحصائيات</span>
+        <span style="display:flex;gap:6px;">
+          <button class="btn-back" id="exportStatsBtn">⬇️ تصدير</button>
+          <button class="btn-back" id="statsBack">→ رجوع</button>
+        </span></h2>
     </div>
     <div id="statsContent"></div>
   </section>
@@ -291,6 +295,7 @@
     <div class="card">
       <h2 style="text-align:center;font-size:22px;">🏁 انتهت اللعبة!</h2>
       <div id="rankList"></div>
+      <button class="btn btn-ghost" id="announceBtnOver">🔊 إعلان النتيجة صوتياً</button>
       <div class="rowbtns">
         <button class="btn btn-gold" id="rematchBtn">🔁 لعبة جديدة بنفس اللاعبين</button>
         <button class="btn btn-ghost" id="newSessionBtn">جلسة جديدة</button>
@@ -856,6 +861,64 @@ function renderStatsPage(){
   box.innerHTML = tiles + wins + lasts + lineCard(gs, list) + points + withdrawals + form;
   wireLineHover(gs, list);
 }
+
+// ================= تصدير الإحصائيات (CSV) =================
+function csvCell(v){ v = String(v==null?"":v); return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function exportStats(){
+  if(!games.length){ alert("لا توجد ألعاب لتصديرها بعد"); return; }
+  const {list} = statsData();
+  const rows = [];
+  rows.push(["اللاعب","عدد الألعاب","انتصارات","مراكز أخيرة","انسحابات","نسبة الفوز %","متوسط النقاط","إجمالي النقاط"]);
+  [...list].sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played)).forEach(s=>{
+    rows.push([s.name, s.played, s.wins, s.lasts, s.withdrawals,
+      Math.round(s.wins/s.played*100), Math.round(s.pts/s.played), s.pts]);
+  });
+  rows.push([]);
+  rows.push(["سجل الألعاب"]);
+  rows.push(["التاريخ","عدد اللاعبين","الجولات","الفائز","الأخير"]);
+  [...games].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).forEach(g=>{
+    const w = g.players.find(p=>p.rank===1) || g.players[0];
+    const l = g.players.find(p=>p.rank===g.players.length) || g.players[g.players.length-1];
+    const d = new Date(g.date);
+    const ds = d.toLocaleDateString("ar")+" "+d.toLocaleTimeString("ar",{hour:"2-digit",minute:"2-digit"});
+    rows.push([ds, g.players.length, g.rounds, `${w.name} (${w.total})`, `${l.name} (${l.total})`]);
+  });
+  const csv = "﻿" + rows.map(r=>r.map(csvCell).join(",")).join("\r\n"); // BOM لدعم العربي في إكسل
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "kinkan-stats-" + new Date().toISOString().slice(0,10) + ".csv";
+  a.click(); URL.revokeObjectURL(a.href);
+}
+$("exportStatsBtn").onclick = exportStats;
+
+// ================= الإعلان الصوتي للترتيب =================
+const AR_ORD = ["","الأول","الثاني","الثالث","الرابع","الخامس","السادس","السابع","الثامن","التاسع","العاشر"];
+function ptsWord(t){
+  const a = Math.abs(t);
+  const num = t<0 ? ("سالب "+a) : String(a);
+  return num + " نقطة";
+}
+function announceStandings(){
+  if(!state || !state.players.length){ return; }
+  if(!("speechSynthesis" in window)){ alert("المتصفح لا يدعم النطق الصوتي"); return; }
+  const sorted = [...state.players].sort((a,b)=> a.total-b.total || (a.out?1:0)-(b.out?1:0));
+  const n = sorted.length;
+  const arVoice = speechSynthesis.getVoices().find(v=>/ar\b|arabic|ar-/i.test(v.lang+" "+v.name));
+  speechSynthesis.cancel();
+  sorted.forEach((p,i)=>{
+    const rank = i+1;
+    const pos = rank===n ? "الخشبية" : ("المركز " + (AR_ORD[rank]||rank));
+    const u = new SpeechSynthesisUtterance(`${p.name}، ${ptsWord(p.total)}، ${pos}`);
+    u.lang = "ar-SA"; u.rate = 0.92; u.pitch = 1;
+    try{ if(arVoice) u.voice = arVoice; }catch(e){}
+    speechSynthesis.speak(u);
+  });
+}
+$("announceBtn").onclick = announceStandings;
+$("announceBtnOver").onclick = announceStandings;
+// بعض المتصفحات تحمّل الأصوات متأخرة
+if("speechSynthesis" in window) speechSynthesis.onvoiceschanged = ()=>{};
 
 let statsReturn = "setup";
 function openStats(){
