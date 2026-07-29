@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٨</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٩</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -238,7 +238,7 @@
     <div class="card">
       <h2>🎙️ صوت الإعلان (اختياري)</h2>
       <p class="subnote" style="text-align:right;">للحصول على صوت بشري طبيعي، الصق مفتاح ElevenLabs. يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد. بدونه يُستخدم صوت المتصفح المجاني تلقائياً.<br>🗣️ <b>للهجة سعودية:</b> اختر صوتاً «Saudi/Gulf» من Voice Library في ElevenLabs، والصق معرّفه (Voice ID) في الخانة الثانية.</p>
-      <input type="password" id="voiceKeyInput" placeholder="مفتاح ElevenLabs API" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:6px;">
+      <input type="text" id="voiceKeyInput" placeholder="مفتاح ElevenLabs API" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" name="kinkan-el-key" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:6px;-webkit-text-security:disc;text-security:disc;">
       <button class="btn btn-ghost" id="loadVoicesBtn" style="font-size:14px;">📥 جلب أصواتي من ElevenLabs</button>
       <select id="voiceSelect" class="hidden" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;"></select>
       <input type="text" id="voiceIdInput" placeholder="أو الصق معرّف الصوت — Voice ID" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;direction:ltr;text-align:left;">
@@ -1260,23 +1260,28 @@ $("announceBtnOver").onclick = announceStandings;
 // ---- إعدادات صوت الإعلان ----
 (function initVoiceSettings(){
   const cfg = getVoiceCfg();
-  if($("voiceKeyInput")) $("voiceKeyInput").value = cfg.key||"";
+  // لا نعيد عرض المفتاح السري في الحقل — نكتفي بإظهار أنه محفوظ
+  if($("voiceKeyInput")){ $("voiceKeyInput").value = ""; if(cfg.key) $("voiceKeyInput").placeholder = "المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره"; }
   if($("voiceIdInput")) $("voiceIdInput").value = cfg.voiceId||"";
   const msg = t=>{ if($("voiceMsg")) $("voiceMsg").textContent=t; };
+  // المفتاح المُدخل أو المحفوظ سابقاً
+  const curKey = ()=> $("voiceKeyInput").value.trim() || getVoiceCfg().key || "";
+  const persist = ()=> saveJSON(VOICE_KEY, { key: curKey(), voiceId: $("voiceIdInput").value.trim() });
   $("voiceSaveBtn") && ($("voiceSaveBtn").onclick = ()=>{
-    saveJSON(VOICE_KEY, { key: $("voiceKeyInput").value.trim(), voiceId: $("voiceIdInput").value.trim() });
-    msg($("voiceKeyInput").value.trim() ? "✅ تم الحفظ — سيُستخدم الصوت السحابي" : "✅ تم — سيُستخدم صوت المتصفح");
+    persist();
+    if($("voiceKeyInput").value.trim()){ $("voiceKeyInput").value=""; $("voiceKeyInput").placeholder="المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره"; }
+    msg(curKey() ? "✅ تم الحفظ — سيُستخدم الصوت السحابي" : "✅ تم — سيُستخدم صوت المتصفح");
   });
   $("voiceClearBtn") && ($("voiceClearBtn").onclick = ()=>{
-    localStorage.removeItem(VOICE_KEY); $("voiceKeyInput").value=""; $("voiceIdInput").value="";
+    localStorage.removeItem(VOICE_KEY); $("voiceKeyInput").value=""; $("voiceKeyInput").placeholder="مفتاح ElevenLabs API"; $("voiceIdInput").value="";
     const sel=$("voiceSelect"); if(sel){ sel.innerHTML=""; sel.classList.add("hidden"); }
     msg("تم مسح المفتاح — سيُستخدم صوت المتصفح المجاني");
   });
   // جلب أصوات المستخدم من حسابه واختيار واحد منها
   $("loadVoicesBtn") && ($("loadVoicesBtn").onclick = async ()=>{
-    const key = $("voiceKeyInput").value.trim();
+    const key = curKey();
     if(!key){ msg("الصق مفتاح ElevenLabs أولاً"); return; }
-    saveJSON(VOICE_KEY, { key, voiceId: $("voiceIdInput").value.trim() });
+    persist();
     msg("⏳ جاري جلب أصواتك…");
     try{
       const res = await fetch("https://api.elevenlabs.io/v1/voices", { headers:{ "xi-api-key": key } });
@@ -1295,11 +1300,11 @@ $("announceBtnOver").onclick = announceStandings;
   });
   $("voiceSelect") && ($("voiceSelect").onchange = ()=>{
     const v=$("voiceSelect").value;
-    if(v){ $("voiceIdInput").value=v; saveJSON(VOICE_KEY, { key:$("voiceKeyInput").value.trim(), voiceId:v }); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
+    if(v){ $("voiceIdInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
   });
   $("voiceTestBtn") && ($("voiceTestBtn").onclick = async ()=>{
     audioUnlock();
-    saveJSON(VOICE_KEY, { key: $("voiceKeyInput").value.trim(), voiceId: $("voiceIdInput").value.trim() });
+    persist();
     const sample = "تجربة الصوت، هذا هو صوت إعلان الترتيب في كنكان.";
     const cfg2 = getVoiceCfg();
     if(cfg2.key && navigator.onLine){

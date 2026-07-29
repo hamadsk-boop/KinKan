@@ -1,5 +1,5 @@
 // كنكان — Service Worker: تشغيل بدون إنترنت مع ضمان وصول التحديثات فوراً
-const CACHE = "kinkan-v18";
+const CACHE = "kinkan-v19";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
