@@ -183,6 +183,9 @@
   .subnote{color:var(--muted);font-size:12.5px;text-align:center;margin-top:8px;line-height:1.7;}
   .rowbtns{display:flex;gap:10px;}
   .rowbtns .btn{flex:1;}
+  .fld{display:block;text-align:right;color:var(--muted);font-size:13px;margin:14px 0 3px;font-weight:700;}
+  .selfld{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;}
+  .keyfld{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;-webkit-text-security:disc;text-security:disc;}
 </style>
 </head>
 <body>
@@ -191,13 +194,14 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٩</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٠</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
   <section id="setup">
     <button class="btn btn-gold hidden" id="liveBanner" style="margin-top:14px;"></button>
     <button class="btn btn-ghost" id="dashBtn" style="margin-top:14px;font-size:16px;">📊 لوحة الإحصائيات والسجلّات</button>
+    <button class="btn btn-ghost" id="settingsBtn" style="margin-top:10px;font-size:16px;">⚙️ الإعدادات</button>
 
     <div class="card hidden" id="parkedCard">
       <h2>🗂️ جلسات محفوظة (غير مكتملة)</h2>
@@ -233,21 +237,6 @@
     <div class="card hidden" id="recentCard">
       <h2>🕹️ سجل الألعاب <span id="gamesTotal" style="color:var(--muted);font-size:13px;"></span></h2>
       <div class="hist" id="recentList"></div>
-    </div>
-
-    <div class="card">
-      <h2>🎙️ صوت الإعلان (اختياري)</h2>
-      <p class="subnote" style="text-align:right;">للحصول على صوت بشري طبيعي، الصق مفتاح ElevenLabs. يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد. بدونه يُستخدم صوت المتصفح المجاني تلقائياً.<br>🗣️ <b>للهجة سعودية:</b> اختر صوتاً «Saudi/Gulf» من Voice Library في ElevenLabs، والصق معرّفه (Voice ID) في الخانة الثانية.</p>
-      <input type="text" id="voiceKeyInput" placeholder="مفتاح ElevenLabs API" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" name="kinkan-el-key" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:6px;-webkit-text-security:disc;text-security:disc;">
-      <button class="btn btn-ghost" id="loadVoicesBtn" style="font-size:14px;">📥 جلب أصواتي من ElevenLabs</button>
-      <select id="voiceSelect" class="hidden" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;"></select>
-      <input type="text" id="voiceIdInput" placeholder="أو الصق معرّف الصوت — Voice ID" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--text);font-size:15px;margin-top:8px;direction:ltr;text-align:left;">
-      <div class="rowbtns">
-        <button class="btn btn-gold" id="voiceSaveBtn">💾 حفظ</button>
-        <button class="btn btn-ghost" id="voiceTestBtn">🔊 اختبار</button>
-        <button class="btn btn-ghost" id="voiceClearBtn">مسح</button>
-      </div>
-      <div class="err" id="voiceMsg"></div>
     </div>
 
   </section>
@@ -342,6 +331,67 @@
       <div class="hist" id="histBoxOver"></div>
     </div>
   </section>
+
+  <!-- ========== شاشة الإعدادات ========== -->
+  <section id="settings" class="hidden">
+    <div class="card">
+      <h2 class="hrow"><span>⚙️ الإعدادات</span>
+        <span><button class="btn-back" id="settingsBack">→ رجوع</button></span></h2>
+    </div>
+
+    <div class="card">
+      <h2>🎙️ صوت الإعلان</h2>
+      <p class="subnote" style="text-align:right;">اختر مزوّد الصوت والصق مفتاحه للحصول على صوت بشري طبيعي. المفتاح يُحفظ على <b>هذا الجهاز فقط</b> ولا يُشارك مع أحد. بدون مفتاح يُستخدم صوت المتصفح المجاني تلقائياً. لكل مزوّد مفتاحه الخاص.</p>
+
+      <label class="fld">مزوّد الصوت</label>
+      <select id="voiceProvider" class="selfld">
+        <option value="elevenlabs">ElevenLabs — أصوات بشرية واقعية</option>
+        <option value="openai">OpenAI — صوت طبيعي (يدعم العربية)</option>
+      </select>
+
+      <label class="fld">مفتاح API</label>
+      <div class="subnote" id="keyStatus" style="text-align:right;margin-top:0;"></div>
+      <input type="text" id="voiceKeyInput" class="keyfld" placeholder="الصق المفتاح هنا" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" name="kinkan-tts-key" style="margin-top:4px;direction:ltr;text-align:left;">
+
+      <!-- خيارات ElevenLabs -->
+      <div id="elBlock">
+        <p class="subnote" style="text-align:right;">🗣️ للهجة سعودية: اختر صوتاً «Saudi/Gulf» من Voice Library في ElevenLabs (Add to My Voices) ثم اجلب أصواتك واخترْه، أو الصق معرّفه.</p>
+        <button class="btn btn-ghost" id="loadVoicesBtn" style="font-size:14px;">📥 جلب أصواتي من ElevenLabs</button>
+        <select id="voiceSelect" class="selfld hidden" style="margin-top:8px;"></select>
+        <input type="text" id="voiceIdInput" class="selfld" placeholder="أو الصق معرّف الصوت — Voice ID" style="margin-top:8px;direction:ltr;text-align:left;">
+      </div>
+
+      <!-- خيارات OpenAI -->
+      <div id="oaBlock" class="hidden">
+        <label class="fld">الصوت</label>
+        <select id="oaVoice" class="selfld">
+          <option value="alloy">Alloy</option>
+          <option value="ash">Ash</option>
+          <option value="ballad">Ballad</option>
+          <option value="coral">Coral</option>
+          <option value="echo">Echo</option>
+          <option value="fable">Fable</option>
+          <option value="nova">Nova</option>
+          <option value="onyx">Onyx</option>
+          <option value="sage">Sage</option>
+          <option value="shimmer">Shimmer</option>
+        </select>
+        <label class="fld">الجودة</label>
+        <select id="oaModel" class="selfld">
+          <option value="gpt-4o-mini-tts">طبيعي (gpt-4o-mini-tts)</option>
+          <option value="tts-1-hd">عالي (tts-1-hd)</option>
+          <option value="tts-1">سريع (tts-1)</option>
+        </select>
+      </div>
+
+      <div class="rowbtns" style="margin-top:14px;">
+        <button class="btn btn-gold" id="voiceSaveBtn">💾 حفظ</button>
+        <button class="btn btn-ghost" id="voiceTestBtn">🔊 اختبار</button>
+        <button class="btn btn-ghost" id="voiceClearBtn">🗑 مسح المفتاح</button>
+      </div>
+      <div class="err" id="voiceMsg"></div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -375,7 +425,7 @@ function load(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY)); }catch
 function loadJSON(k, def){ try{ return JSON.parse(localStorage.getItem(k)) || def; }catch(e){ return def; } }
 function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function show(id){ ["setup","game","over","stats"].forEach(s=>$(s).classList.toggle("hidden", s!==id)); }
+function show(id){ ["setup","game","over","stats","settings"].forEach(s=>$(s).classList.toggle("hidden", s!==id)); }
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
 
 // ================= ملفات اللاعبين =================
@@ -1195,33 +1245,70 @@ function standingLines(){
 // ---- الصوت السحابي (ElevenLabs) — اختياري، المفتاح على هذا الجهاز فقط ----
 const VOICE_KEY = "kinkan-voice-cfg-v1";
 const EL_DEFAULT_VOICE = "pNInz6obpgDQGcFmaJgB";
-function getVoiceCfg(){ return loadJSON(VOICE_KEY, {key:"", voiceId:""}); }
-async function cloudSpeak(text){
-  const cfg = getVoiceCfg();
-  const vid = (cfg.voiceId||"").trim() || EL_DEFAULT_VOICE;
+// نموذج الإعداد مع دعم أكثر من مزوّد، ومع ترقية الإعداد القديم {key,voiceId}
+function normVoiceCfg(raw){
+  raw = raw || {};
+  const oldEl = ("key" in raw || "voiceId" in raw) ? { key:raw.key||"", voiceId:raw.voiceId||"" } : null;
+  const el = raw.elevenlabs || oldEl || { key:"", voiceId:"" };
+  const oa = raw.openai || { key:"", voice:"alloy", model:"gpt-4o-mini-tts" };
+  const provider = (raw.provider==="openai") ? "openai" : "elevenlabs";
+  return {
+    provider,
+    elevenlabs: { key: (el.key||"").trim(), voiceId: (el.voiceId||"").trim() },
+    openai: { key: (oa.key||"").trim(), voice: oa.voice||"alloy", model: oa.model||"gpt-4o-mini-tts" }
+  };
+}
+function getVoiceCfg(){ return normVoiceCfg(loadJSON(VOICE_KEY, {})); }
+// مفتاح المزوّد الحالي (لتحديد هل نستخدم الصوت السحابي أم المدمج)
+function activeVoiceKey(){ const c=getVoiceCfg(); return (c[c.provider] && c[c.provider].key) || ""; }
+// تشغيل مقطع صوتي من blob وانتظار انتهائه
+async function playBlob(blob){
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  try{ await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); }); }
+  finally{ URL.revokeObjectURL(url); }
+}
+function ttsError(res, detail){ const err=new Error("tts "+res.status); err.status=res.status; err.detail=detail||""; return err; }
+async function elevenSpeak(text, el){
+  const vid = (el.voiceId||"").trim() || EL_DEFAULT_VOICE;
   const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(vid), {
     method:"POST",
-    headers:{ "xi-api-key": cfg.key, "Content-Type":"application/json" },
+    headers:{ "xi-api-key": el.key, "Content-Type":"application/json" },
     body: JSON.stringify({ text, model_id:"eleven_multilingual_v2",
       voice_settings:{ stability:0.45, similarity_boost:0.8, style:0.25, use_speaker_boost:true } })
   });
   if(!res.ok){
     let detail=""; try{ const j=await res.clone().json(); detail = (j.detail && (j.detail.message||j.detail.status)) || JSON.stringify(j.detail||j); }catch(_){ try{ detail=await res.text(); }catch(e){} }
-    const err = new Error("tts "+res.status); err.status=res.status; err.detail=detail||""; throw err;
+    throw ttsError(res, detail);
   }
-  const url = URL.createObjectURL(await res.blob());
-  const audio = new Audio(url);
-  try{ await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); }); }
-  finally{ URL.revokeObjectURL(url); }
+  await playBlob(await res.blob());
+}
+async function openaiSpeak(text, oa){
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
+    method:"POST",
+    headers:{ "Authorization":"Bearer "+oa.key, "Content-Type":"application/json" },
+    body: JSON.stringify({ model: oa.model||"gpt-4o-mini-tts", voice: oa.voice||"alloy", input: text })
+  });
+  if(!res.ok){
+    let detail=""; try{ const j=await res.clone().json(); detail=(j.error&&(j.error.message||j.error.code))||JSON.stringify(j); }catch(_){ try{ detail=await res.text(); }catch(e){} }
+    throw ttsError(res, detail);
+  }
+  await playBlob(await res.blob());
+}
+async function cloudSpeak(text){
+  const c = getVoiceCfg();
+  if(c.provider==="openai") return openaiSpeak(text, c.openai);
+  return elevenSpeak(text, c.elevenlabs);
 }
 // رسالة خطأ مفهومة حسب نوع المشكلة (مع إظهار السبب الحقيقي من ElevenLabs)
 function cloudErrMsg(e){
   const s=e&&e.status; const d=((e&&e.detail)||"").toString(); const dl=d.toLowerCase();
-  if(dl.includes("subscription")||dl.includes("paid")||dl.includes("upgrade")||dl.includes("tier")||dl.includes("plan")||dl.includes("professional"))
-    return "⚠️ هذا الصوت يتطلب اشتراكاً مدفوعاً في ElevenLabs — جرّب صوتاً آخر أو اترك الخانة فارغة للصوت الافتراضي.";
-  if(s===401||s===403 || dl.includes("api_key")||dl.includes("unauthor")||dl.includes("invalid")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
+  if(dl.includes("subscription")||dl.includes("paid")||dl.includes("upgrade")||dl.includes("tier")||dl.includes("professional"))
+    return "⚠️ هذا الصوت يتطلب اشتراكاً مدفوعاً — جرّب صوتاً آخر أو اترك الخانة فارغة للصوت الافتراضي.";
+  if(dl.includes("insufficient_quota")||dl.includes("billing")) return "⚠️ لا يوجد رصيد في حساب المزوّد — تأكد من تفعيل الدفع/الرصيد.";
+  if(s===401||s===403 || dl.includes("api_key")||dl.includes("unauthor")||dl.includes("invalid")||dl.includes("incorrect")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
   if(s===404 || dl.includes("voice_not_found")||dl.includes("not found")) return "⚠️ الصوت غير موجود بحسابك — أضِفه من Voice Library (Add to My Voices)";
-  if(s===429 || dl.includes("quota")||dl.includes("limit")||dl.includes("credit")) return "⚠️ نفد رصيد ElevenLabs الشهري";
+  if(s===429 || dl.includes("quota")||dl.includes("limit")||dl.includes("credit")) return "⚠️ نفد الرصيد الشهري لدى المزوّد";
   if(s===400) return "⚠️ رُفض الطلب" + (d?("، السبب: "+d.slice(0,140)):"");
   return "⚠️ تعذّر الصوت السحابي" + (s?(" (رمز "+s+")"):"") + (d?("، "+d.slice(0,120)):"");
 }
@@ -1242,8 +1329,7 @@ async function announceStandings(){
   audioUnlock();
   const lines = standingLines();
   const joke = JOKES[Math.floor(Math.random()*JOKES.length)];
-  const cfg = getVoiceCfg();
-  if(cfg.key && navigator.onLine){
+  if(activeVoiceKey() && navigator.onLine){
     try{
       await cloudSpeak(lines.map(l=>l.text).join(" "));
       playSadTrombone();
@@ -1257,28 +1343,62 @@ async function announceStandings(){
 $("announceBtn").onclick = announceStandings;
 $("announceBtnOver").onclick = announceStandings;
 
-// ---- إعدادات صوت الإعلان ----
+// ---- إعدادات صوت الإعلان (صفحة الإعدادات) ----
 (function initVoiceSettings(){
-  const cfg = getVoiceCfg();
-  // لا نعيد عرض المفتاح السري في الحقل — نكتفي بإظهار أنه محفوظ
-  if($("voiceKeyInput")){ $("voiceKeyInput").value = ""; if(cfg.key) $("voiceKeyInput").placeholder = "المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره"; }
-  if($("voiceIdInput")) $("voiceIdInput").value = cfg.voiceId||"";
   const msg = t=>{ if($("voiceMsg")) $("voiceMsg").textContent=t; };
-  // المفتاح المُدخل أو المحفوظ سابقاً
-  const curKey = ()=> $("voiceKeyInput").value.trim() || getVoiceCfg().key || "";
-  const persist = ()=> saveJSON(VOICE_KEY, { key: curKey(), voiceId: $("voiceIdInput").value.trim() });
-  $("voiceSaveBtn") && ($("voiceSaveBtn").onclick = ()=>{
-    persist();
-    if($("voiceKeyInput").value.trim()){ $("voiceKeyInput").value=""; $("voiceKeyInput").placeholder="المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره"; }
-    msg(curKey() ? "✅ تم الحفظ — سيُستخدم الصوت السحابي" : "✅ تم — سيُستخدم صوت المتصفح");
-  });
-  $("voiceClearBtn") && ($("voiceClearBtn").onclick = ()=>{
-    localStorage.removeItem(VOICE_KEY); $("voiceKeyInput").value=""; $("voiceKeyInput").placeholder="مفتاح ElevenLabs API"; $("voiceIdInput").value="";
+  const provEl = $("voiceProvider");
+  if(!provEl) return;
+  // المزوّد المختار في الواجهة حالياً
+  const curProv = ()=> provEl.value==="openai" ? "openai" : "elevenlabs";
+  // المفتاح: المُدخل حديثاً أو المحفوظ لهذا المزوّد
+  const curKey = ()=> $("voiceKeyInput").value.trim() || (getVoiceCfg()[curProv()].key || "");
+  // اقرأ الواجهة وادمجها مع المحفوظ (لا نمسح مفتاح مزوّد آخر)
+  function persist(){
+    const c = getVoiceCfg();
+    const p = curProv();
+    c.provider = p;
+    const typed = $("voiceKeyInput").value.trim();
+    if(typed) c[p].key = typed; // لا نكتب فوق المفتاح المحفوظ إلا إذا لُصق جديد
+    c.elevenlabs.voiceId = $("voiceIdInput").value.trim();
+    c.openai.voice = $("oaVoice").value;
+    c.openai.model = $("oaModel").value;
+    saveJSON(VOICE_KEY, c);
+  }
+  // حالة المفتاح المعروضة + إظهار خانات المزوّد
+  function syncUI(){
+    const c = getVoiceCfg();
+    const p = curProv();
+    $("elBlock").classList.toggle("hidden", p!=="elevenlabs");
+    $("oaBlock").classList.toggle("hidden", p!=="openai");
+    $("voiceKeyInput").value = ""; // لا نعيد عرض المفتاح
+    $("voiceKeyInput").placeholder = c[p].key ? "المفتاح محفوظ ✓ — الصق مفتاحاً جديداً لتغييره" : "الصق المفتاح هنا";
+    $("keyStatus").innerHTML = c[p].key
+      ? "🔑 المفتاح محفوظ لهذا المزوّد ✓ — تقدر تلصق مفتاحاً جديداً لتغييره أو تمسحه."
+      : "🔓 لا يوجد مفتاح محفوظ لهذا المزوّد — بدونه يُستخدم صوت المتصفح المجاني.";
+    $("voiceIdInput").value = c.elevenlabs.voiceId || "";
+    $("oaVoice").value = c.openai.voice || "alloy";
+    $("oaModel").value = c.openai.model || "gpt-4o-mini-tts";
     const sel=$("voiceSelect"); if(sel){ sel.innerHTML=""; sel.classList.add("hidden"); }
-    msg("تم مسح المفتاح — سيُستخدم صوت المتصفح المجاني");
-  });
-  // جلب أصوات المستخدم من حسابه واختيار واحد منها
-  $("loadVoicesBtn") && ($("loadVoicesBtn").onclick = async ()=>{
+  }
+  // القيم المحفوظة عند فتح الصفحة
+  provEl.value = getVoiceCfg().provider;
+  syncUI();
+  provEl.onchange = ()=>{ persist(); syncUI(); msg(""); };
+  $("voiceSaveBtn").onclick = ()=>{
+    persist();
+    const has = getVoiceCfg()[curProv()].key;
+    syncUI();
+    msg(has ? "✅ تم الحفظ — سيُستخدم الصوت السحابي عند الإعلان" : "✅ تم — سيُستخدم صوت المتصفح المجاني");
+  };
+  $("voiceClearBtn").onclick = ()=>{
+    const c = getVoiceCfg(); const p = curProv();
+    c[p].key = ""; if(p==="elevenlabs") c.elevenlabs.voiceId="";
+    saveJSON(VOICE_KEY, c);
+    syncUI();
+    msg("تم مسح مفتاح هذا المزوّد — سيُستخدم صوت المتصفح المجاني");
+  };
+  // ElevenLabs: جلب أصوات الحساب واختيار واحد
+  $("loadVoicesBtn").onclick = async ()=>{
     const key = curKey();
     if(!key){ msg("الصق مفتاح ElevenLabs أولاً"); return; }
     persist();
@@ -1294,26 +1414,25 @@ $("announceBtnOver").onclick = announceStandings;
         vs.map(v=>{ const acc=(v.labels&&(v.labels.accent||v.labels.language))||v.category||"";
           return `<option value="${v.voice_id}">${esc(v.name)}${acc?" — "+esc(acc):""}</option>`; }).join("");
       sel.classList.remove("hidden");
-      const cur=getVoiceCfg().voiceId; if(cur) sel.value=cur;
+      const cur=getVoiceCfg().elevenlabs.voiceId; if(cur) sel.value=cur;
       msg("✅ اختر صوتاً من القائمة ثم اضغط اختبار ("+vs.length+" صوت)");
     }catch(e){ msg(cloudErrMsg(e)); }
-  });
-  $("voiceSelect") && ($("voiceSelect").onchange = ()=>{
+  };
+  $("voiceSelect").onchange = ()=>{
     const v=$("voiceSelect").value;
     if(v){ $("voiceIdInput").value=v; persist(); msg("✅ تم اختيار الصوت — اضغط اختبار"); }
-  });
-  $("voiceTestBtn") && ($("voiceTestBtn").onclick = async ()=>{
+  };
+  $("voiceTestBtn").onclick = async ()=>{
     audioUnlock();
     persist();
     const sample = "تجربة الصوت، هذا هو صوت إعلان الترتيب في كنكان.";
-    const cfg2 = getVoiceCfg();
-    if(cfg2.key && navigator.onLine){
+    if(activeVoiceKey() && navigator.onLine){
       msg("⏳ جاري التجربة عبر الصوت السحابي…");
       try{ await cloudSpeak(sample); msg("✅ الصوت السحابي يعمل"); return; }
       catch(e){ msg(cloudErrMsg(e) + " — جرّبنا الصوت المدمج"); }
     }
     browserSpeakSequence([{text:sample, last:false}], "");
-  });
+  };
 })();
 // بعض المتصفحات تحمّل الأصوات متأخرة — نضمن تحميلها
 if("speechSynthesis" in window){ speechSynthesis.onvoiceschanged = ()=>{}; try{ speechSynthesis.getVoices(); }catch(e){} }
@@ -1332,6 +1451,10 @@ $("statsBack").onclick = ()=>{
   else if(statsReturn==="over" && state && state.finished){ renderOver(); show("over"); }
   else { renderSetup(); show("setup"); }
 };
+
+// ---- التنقّل لصفحة الإعدادات (تُفتح من الرئيسية) ----
+$("settingsBtn").onclick = ()=>{ show("settings"); window.scrollTo({top:0}); };
+$("settingsBack").onclick = ()=>{ renderSetup(); show("setup"); window.scrollTo({top:0}); };
 
 // ================= قاعدة البيانات الدائمة (Firebase) =================
 const DB_PATH = "groups/estraha"; // قاعدة موحدة ثابتة لاستراحة واحدة
