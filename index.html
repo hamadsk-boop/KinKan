@@ -191,7 +191,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٥</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ١٦</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1203,11 +1203,23 @@ async function cloudSpeak(text){
     body: JSON.stringify({ text, model_id:"eleven_multilingual_v2",
       voice_settings:{ stability:0.45, similarity_boost:0.8, style:0.25, use_speaker_boost:true } })
   });
-  if(!res.ok) throw new Error("tts "+res.status);
+  if(!res.ok){
+    let detail=""; try{ const j=await res.clone().json(); detail = (j.detail && (j.detail.message||j.detail.status)) || JSON.stringify(j.detail||j); }catch(_){ try{ detail=await res.text(); }catch(e){} }
+    const err = new Error("tts "+res.status); err.status=res.status; err.detail=detail||""; throw err;
+  }
   const url = URL.createObjectURL(await res.blob());
   const audio = new Audio(url);
   try{ await new Promise((resolve,reject)=>{ audio.onended=resolve; audio.onerror=()=>reject(new Error("audio")); audio.play().then(()=>{},reject); }); }
   finally{ URL.revokeObjectURL(url); }
+}
+// رسالة خطأ مفهومة حسب نوع المشكلة
+function cloudErrMsg(e){
+  const s=e&&e.status, d=((e&&e.detail)||"").toString().toLowerCase();
+  if(s===401||s===403 || d.includes("api_key")||d.includes("unauthor")) return "⚠️ المفتاح غير صحيح أو غير مفعّل";
+  if(s===404 || d.includes("voice_not_found")||d.includes("not found")) return "⚠️ معرّف الصوت غير موجود بحسابك — أضِف الصوت من Voice Library بزر «Add to My Voices» ثم انسخ الـ Voice ID من My Voices";
+  if(s===400 || d.includes("voice")) return "⚠️ مشكلة في معرّف الصوت — تأكد أنك أضفت الصوت إلى My Voices ونسخت المعرّف الصحيح";
+  if(s===429 || d.includes("quota")||d.includes("limit")) return "⚠️ نفد رصيد ElevenLabs الشهري";
+  return "⚠️ تعذّر الصوت السحابي" + (s?(" (رمز "+s+")"):"");
 }
 // النطق المدمج (البديل المجاني)
 function browserSpeakSequence(lines, joke){
@@ -1263,7 +1275,7 @@ $("announceBtnOver").onclick = announceStandings;
     if(cfg2.key && navigator.onLine){
       msg("⏳ جاري التجربة عبر الصوت السحابي…");
       try{ await cloudSpeak(sample); msg("✅ الصوت السحابي يعمل"); return; }
-      catch(e){ msg("⚠️ تعذّر الصوت السحابي (تأكد من المفتاح/الرصيد) — جرّبنا الصوت المدمج"); }
+      catch(e){ msg(cloudErrMsg(e) + " — جرّبنا الصوت المدمج"); }
     }
     browserSpeakSequence([{text:sample, last:false}], "");
   });
