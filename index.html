@@ -183,7 +183,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٨</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٩</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -282,8 +282,9 @@
   <section id="stats" class="hidden">
     <div class="card">
       <h2 class="hrow"><span>📊 لوحة الإحصائيات</span>
-        <span style="display:flex;gap:6px;">
-          <button class="btn-back" id="exportStatsBtn">⬇️ تصدير</button>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+          <button class="btn-back" id="shareImgBtn">🖼️ صورة</button>
+          <button class="btn-back" id="exportStatsBtn">⬇️ CSV</button>
           <button class="btn-back" id="statsBack">→ رجوع</button>
         </span></h2>
     </div>
@@ -891,6 +892,81 @@ function exportStats(){
   a.click(); URL.revokeObjectURL(a.href);
 }
 $("exportStatsBtn").onclick = exportStats;
+
+// ================= تصدير الإحصائيات كصورة (للمشاركة في واتساب) =================
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function drawStatsImage(){
+  const {list} = statsData();
+  const rows = [...list].sort((a,b)=> b.wins-a.wins || (a.pts/a.played)-(b.pts/b.played));
+  const W=820, padding=28, headH=150, colH=52, rowH=46, footH=74;
+  const H = headH + colH + rows.length*rowH + footH;
+  const S=2; // دقة مضاعفة لوضوح على الجوال
+  const cv=document.createElement("canvas");
+  cv.width=W*S; cv.height=H*S;
+  const ctx=cv.getContext("2d"); ctx.scale(S,S);
+  ctx.fillStyle="#0d1f16"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#14311f"; roundRectPath(ctx,12,12,W-24,H-24,18); ctx.fill();
+  ctx.strokeStyle="#2b5a3c"; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.textBaseline="middle";
+  // العنوان
+  ctx.direction="rtl"; ctx.textAlign="center";
+  ctx.fillStyle="#e8c765"; ctx.font="bold 34px system-ui,-apple-system,'Segoe UI',sans-serif";
+  ctx.fillText("🂡 كنكان — الإحصائيات", W/2, 56);
+  ctx.fillStyle="#9db8a6"; ctx.font="16px system-ui,-apple-system,sans-serif";
+  const now=new Date();
+  ctx.fillText(now.toLocaleDateString("ar")+" · "+games.length+" لعبة", W/2, 92);
+  const nameRight=W-padding;
+  const cols=[
+    {h:"ألعاب",  x:500, get:r=>r.played, color:"#eef5ef"},
+    {h:"فوز",    x:400, get:r=>r.wins, color:"#4fca7e"},
+    {h:"أخير",   x:300, get:r=>r.lasts, color:"#e05a5a"},
+    {h:"انسحاب", x:196, get:r=>r.withdrawals, color:"#e8c765"},
+    {h:"متوسط",  x:86,  get:r=>Math.round(r.pts/r.played), color:"#eef5ef"},
+  ];
+  let y=headH;
+  // رؤوس الأعمدة
+  ctx.font="bold 17px system-ui,sans-serif"; ctx.fillStyle="#9db8a6";
+  ctx.direction="rtl"; ctx.textAlign="right"; ctx.fillText("اللاعب", nameRight, y);
+  ctx.textAlign="center"; cols.forEach(c=> ctx.fillText(c.h, c.x, y));
+  ctx.strokeStyle="#2b5a3c"; ctx.beginPath(); ctx.moveTo(padding,y+24); ctx.lineTo(W-padding,y+24); ctx.stroke();
+  y+=colH;
+  const medals=["🥇","🥈","🥉"];
+  rows.forEach((r,i)=>{
+    const cy=y+rowH/2-4;
+    if(i===0){ ctx.fillStyle="rgba(232,199,101,0.10)"; roundRectPath(ctx,padding-4,y-2,W-2*padding+8,rowH-6,8); ctx.fill(); }
+    ctx.direction="rtl"; ctx.textAlign="right"; ctx.font="bold 19px system-ui,sans-serif"; ctx.fillStyle="#eef5ef";
+    ctx.fillText((medals[i]||((i+1)+"."))+" "+r.name, nameRight, cy);
+    ctx.direction="ltr"; ctx.textAlign="center"; ctx.font="18px system-ui,sans-serif";
+    cols.forEach(c=>{ ctx.fillStyle=c.color; ctx.fillText(String(c.get(r)), c.x, cy); });
+    y+=rowH;
+  });
+  ctx.direction="rtl"; ctx.textAlign="center"; ctx.fillStyle="#9db8a6"; ctx.font="14px system-ui,sans-serif";
+  ctx.fillText("تطبيق كنكان · hamadsk-boop.github.io/KinKan", W/2, H-38);
+  return cv;
+}
+function shareStatsImage(){
+  if(!games.length){ alert("لا توجد ألعاب لتصديرها بعد"); return; }
+  const cv = drawStatsImage();
+  cv.toBlob(async (blob)=>{
+    if(!blob){ alert("تعذّر إنشاء الصورة"); return; }
+    const fname = "kinkan-stats-"+new Date().toISOString().slice(0,10)+".png";
+    const file = new File([blob], fname, {type:"image/png"});
+    // مشاركة مباشرة (واتساب…) على الجوال إن كانت مدعومة
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file], title:"إحصائيات كنكان"}); return; }
+      catch(e){ if(e && e.name==="AbortError") return; }
+    }
+    // غير ذلك: تنزيل الصورة
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  }, "image/png");
+}
+$("shareImgBtn").onclick = shareStatsImage;
 
 // ================= الإعلان الصوتي للترتيب =================
 const AR_ORD = ["","الأول","الثاني","الثالث","الرابع","الخامس","السادس","السابع","الثامن","التاسع","العاشر"];
