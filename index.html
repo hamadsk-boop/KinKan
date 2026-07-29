@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٤</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٥</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -1231,7 +1231,7 @@ function standingLines(){
   return sorted.map((p,i)=>{
     const rank=i+1, last=rank===n;
     const pos = last ? "الخشبية" : ("المركز " + (AR_ORD[rank]||rank));
-    return { text:`${p.name}، ${ptsWord(p.total)}، ${pos}` + (last?"!":"،"), last };
+    return { text:`${pos}، ${p.name}، ${ptsWord(p.total)}` + (last?"!":"،"), last };
   });
 }
 // ---- الصوت السحابي (ElevenLabs) — اختياري، المفتاح على هذا الجهاز فقط ----
