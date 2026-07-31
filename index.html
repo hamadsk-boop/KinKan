@@ -123,6 +123,8 @@
   .recent .rd{color:var(--muted);font-size:11.5px;width:100%;}
   .gdel{background:transparent;border:1px solid var(--line);border-radius:7px;color:var(--muted);
     cursor:pointer;font-size:12px;padding:3px 8px;margin-right:auto;}
+  .gwd{background:transparent;border:1px solid var(--blue);border-radius:7px;color:var(--blue);
+    cursor:pointer;font-size:12px;padding:3px 8px;}
   /* editing */
   .editbtn{background:transparent;border:none;cursor:pointer;font-size:14px;padding:2px 4px;}
   .edit-banner{background:rgba(90,169,224,.12);border:1px dashed var(--blue);color:var(--blue);
@@ -194,7 +196,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٦</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٧</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -717,15 +719,44 @@ function renderDashboard(){
     const d = new Date(g.date);
     const ds = d.toLocaleDateString("ar-SA",{day:"numeric",month:"short"}) + " " +
                d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+    const outs = g.players.filter(p=>p.withdrew);
     const div = document.createElement("div");
     div.className = "recent";
-    div.innerHTML = `<span class="rd">📅 ${ds} · ${g.players.length} لاعبين · ${g.rounds} جولة</span>
+    div.innerHTML = `<span class="rd">📅 ${ds} · ${g.players.length} لاعبين · ${g.rounds} جولة${
+        outs.length ? ` · 🚪 ${outs.map(p=>esc(p.name)).join("، ")}` : ""}</span>
       <span class="leader">🥇 ${esc(w.name)} (${w.total})</span>
       <span class="danger">💀 ${esc(l.name)} (${l.total})</span>
-      <button class="gdel" title="حذف اللعبة">🗑</button>`;
+      <button class="gdel" title="حذف اللعبة">🗑</button>${
+        outs.length ? `<button class="gwd" title="إلغاء علامة الانسحاب">🚪 إلغاء الانسحاب</button>` : ""}`;
     div.querySelector(".gdel").onclick = ()=> deleteGame(g.id);
+    const wb = div.querySelector(".gwd");
+    if(wb) wb.onclick = ()=> clearWithdrawal(g.id);
     box.appendChild(div);
   });
+}
+
+// إلغاء علامة الانسحاب عن لاعب في لعبة مؤرشفة — تختفي من إحصائية «الأكثر انسحاباً»
+function clearWithdrawal(gameId){
+  const g = games.find(x=>x.id===gameId); if(!g) return;
+  const outs = g.players.filter(p=>p.withdrew);
+  if(!outs.length) return;
+  if(outs.length===1){
+    if(!confirm(`إلغاء علامة الانسحاب عن «${outs[0].name}» في هذه اللعبة؟\nبتختفي من إحصائية «الأكثر انسحاباً» على كل الأجهزة.`)) return;
+    outs[0].withdrew = false;
+  } else {
+    const list = outs.map((p,i)=>`${i+1} = ${p.name}`).join("\n");
+    const c = prompt(`اكتب رقم اللاعب لإلغاء علامة انسحابه:\n\n${list}\n\n0 = الجميع`, "0");
+    if(c===null) return;
+    const n = +String(c).trim();
+    if(n===0) outs.forEach(p=>p.withdrew=false);
+    else if(n>=1 && n<=outs.length) outs[n-1].withdrew = false;
+    else { alert("رقم غير صحيح"); return; }
+  }
+  saveJSON(GAMES_KEY, games);
+  touchGames();  // الأحدث يفوز → التصحيح ينتشر لكل الأجهزة
+  cloudPush();
+  renderDashboard();
+  if(!$("stats").classList.contains("hidden")) renderStatsPage();
 }
 
 // حذف لعبة من السجل التاريخي — تختفي بياناتها من الإحصائيات نهائياً (محمي بالرمز السري)
