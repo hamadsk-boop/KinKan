@@ -194,7 +194,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٥</p>
+    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٦</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -483,6 +483,7 @@ function renameProfile(id){
   parked.forEach(s=> (s.players||[]).forEach(pl=>{ if(pl.pid===id) pl.name=nm; }));
   if(state) state.players.forEach(pl=>{ if(pl.pid===id) pl.name=nm; });
   saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  touchGames();
   if(state){ touchSession(); save(); }
   touchParked();
   cloudPush();
@@ -602,12 +603,13 @@ function archiveGame(){
   games = games.filter(g=>g.id!==rec.id);
   games.push(rec);
   saveJSON(GAMES_KEY, games);
+  touchGames();
 }
 function unarchiveGame(){
   if(!state || !state.gameId) return;
   const before = games.length;
   games = games.filter(g=>g.id!==state.gameId);
-  if(games.length!==before) saveJSON(GAMES_KEY, games);
+  if(games.length!==before){ saveJSON(GAMES_KEY, games); touchGames(); }
 }
 
 // ================= الجلسات المحفوظة (غير المكتملة) =================
@@ -650,11 +652,12 @@ function endSessionNow(){
   touchSession(); save(); cloudPush();
   renderOver(); show("over");
 }
-// إضافة لاعب على لعبة قائمة — يبدأ بمجموع الأخير (أعلى نقاط حالياً)
+// إضافة لاعب على لعبة قائمة — يبدأ بنفس نقاط الأخير بين اللاعبين النشطين (أعلى نقاط حالياً)
 function addPlayerMidGame(pid){
   if(!state || state.finished) return;
   if(state.players.some(p=>p.pid===pid)) return;
-  const startTotal = state.players.length ? Math.max(...state.players.map(p=>p.total)) : 0;
+  const activeTotals = state.players.filter(p=>!p.out).map(p=>p.total);
+  const startTotal = activeTotals.length ? Math.max(...activeTotals) : 0;
   state.players.push({pid, name: profName(pid), total: startTotal, base: startTotal});
   touchSession(); save(); cloudPush();
   renderGame();
@@ -733,6 +736,7 @@ function deleteGame(id){
   if(code.trim() !== DELETE_CODE){ alert("الرمز غير صحيح ❌ — لم تُحذف اللعبة"); return; }
   games = games.filter(x=>x.id!==id);
   saveJSON(GAMES_KEY, games);
+  touchGames(); // يثبّت الحذف عبر كل الأجهزة (الأحدث يفوز)
   cloudPush();
   renderDashboard();
   if(!$("stats").classList.contains("hidden")) renderStatsPage();
@@ -1338,7 +1342,7 @@ function browserSpeakSequence(lines, joke){
     try{ if(voice) u.voice=voice; }catch(e){}
     if(onend) u.onend=onend; speechSynthesis.speak(u);
   };
-  lines.forEach(l=> say(l.text, l.last ? ()=>{ playSadTrombone(); setTimeout(()=>say(joke),1600); } : null));
+  lines.forEach(l=> say(l.text, l.last ? ()=>{ setTimeout(()=>say(joke),700); } : null));
 }
 // نطق جملة واحدة بالصوت المدمج (للنكتة فقط عند تعذّر السحابي بعد نجاح النشرة)
 function browserSpeakOne(text){
@@ -1358,8 +1362,7 @@ async function announceStandings(){
     try{
       await cloudSpeak(lines.map(l=>l.text).join(" "));
       mainSpoken = true; // نُطقت النشرة بنجاح بالصوت السحابي
-      playSadTrombone();
-      await new Promise(r=>setTimeout(r,1500));
+      await new Promise(r=>setTimeout(r,600));
       await cloudSpeak(joke);
       return;
     }catch(e){
@@ -1532,17 +1535,22 @@ const FB_CONFIG = {
 const SESSAT_KEY = "kinkan-session-at-v1";
 const PARKEDAT_KEY = "kinkan-parked-at-v1";
 const VOICEAT_KEY = "kinkan-voice-at-v1";
+const GAMESAT_KEY = "kinkan-games-at-v1";
 let sessionAt = +(localStorage.getItem(SESSAT_KEY) || 0); // طابع زمني لآخر تعديل محلي للجلسة
 let parkedAt = +(localStorage.getItem(PARKEDAT_KEY) || 0); // طابع زمني للجلسات المحفوظة
 let voiceAt = +(localStorage.getItem(VOICEAT_KEY) || 0);   // طابع زمني لإعداد الصوت المشترك
+let gamesAt = +(localStorage.getItem(GAMESAT_KEY) || 0);   // طابع زمني لأرشيف الألعاب (ليثبت الحذف عبر الأجهزة)
 const cloud = { db:null, fns:null, ready:false, firstSync:true };
 
 function setSessionAt(t){ sessionAt = t; try{ localStorage.setItem(SESSAT_KEY, String(t)); }catch(e){} }
 function setParkedAt(t){ parkedAt = t; try{ localStorage.setItem(PARKEDAT_KEY, String(t)); }catch(e){} }
 function setVoiceAt(t){ voiceAt = t; try{ localStorage.setItem(VOICEAT_KEY, String(t)); }catch(e){} }
+function setGamesAt(t){ gamesAt = t; try{ localStorage.setItem(GAMESAT_KEY, String(t)); }catch(e){} }
 // يُنادى عند كل تعديل محلي حقيقي للجلسة (بدء/تسجيل/تعديل/غرامة/إنهاء/مسح)
 function touchSession(){ setSessionAt(Date.now()); }
 function touchParked(){ setParkedAt(Date.now()); saveJSON(PARKED_KEY, parked); }
+// يُنادى عند أي تغيير على أرشيف الألعاب (أرشفة/تعديل/حذف) — فيسود الأحدث عبر الأجهزة
+function touchGames(){ setGamesAt(Date.now()); }
 // يُنادى عند حفظ/مسح مفتاح الصوت — فيتشارك مع كل الأجهزة عبر القاعدة
 function touchVoice(){ setVoiceAt(Date.now()); if(cloud.ready) cloudPush(); }
 
@@ -1561,6 +1569,7 @@ function cloudPush(){
     sessionAt: sessionAt,
     parked: objBy(parked, "gameId"),
     parkedAt: parkedAt,
+    gamesAt: gamesAt,       // طابع أرشيف الألعاب — الأحدث يفوز فيثبت الحذف
     voice: getVoiceCfg(),   // مفتاح/إعداد الصوت مشترك بين كل الأجهزة (اختيار المالك)
     voiceAt: voiceAt,
     updated: new Date().toISOString()
@@ -1656,9 +1665,23 @@ function reconcileParked(rpk, rAt){
   return "same";
 }
 
+// أرشيف الألعاب: الأحدث زمنياً يفوز — فالحذف من أي جهاز يثبت ولا يُعاد بجهاز قديم
+function reconcileGames(rg, rAt){
+  const norm = arr => (arr||[]).slice().sort((a,b)=>(a.id||"").localeCompare(b.id||""));
+  const remote = norm(rg), localN = norm(games);
+  if(JSON.stringify(remote) === JSON.stringify(localN)){
+    if(rAt > gamesAt) setGamesAt(rAt);
+    return "same";
+  }
+  if(rAt > gamesAt){ games = remote; setGamesAt(rAt); saveJSON(GAMES_KEY, games); return "adopted"; }
+  if(rAt < gamesAt) return "kept";
+  return "same";
+}
+
 function handleRemote(v){
   const rp = arrFromObj(v.profiles);
   const rg = arrFromObj(v.games);
+  const rgAt = +(v.gamesAt || 0);
   const rs = normSession(v.session || null);
   const rAt = +(v.sessionAt || 0);
   const rpk = arrFromObj(v.parked);
@@ -1681,28 +1704,36 @@ function handleRemote(v){
       }
     });
     profiles = profiles.filter((p,i)=> profiles.findIndex(x=>x.id===p.id)===i);
-    // هل عندنا ملفات/ألعاب محلية غير موجودة بالقاعدة؟ (لنعرف إن كنا سنرفع)
-    let localExtra = profiles.some(p=>!rp.some(x=>x.id===p.id)) || games.some(g=>!rg.some(x=>x.id===g.id));
+    // الملفات: دمج — كل جهاز قد يكون أضاف لاعبين، فنحافظ على الجميع
+    let profExtra = profiles.some(p=>!rp.some(x=>x.id===p.id));
     rp.forEach(p=>{ if(!profiles.some(x=>x.id===p.id)) profiles.push(p); });
-    rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
-    saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+    saveJSON(PROF_KEY, profiles);
+    // الألعاب: أول ترقية (بلا طابع) نوحّد التاريخين حتى لا نفقد شيئاً؛ بعدها الأحدث يفوز فيثبت الحذف
+    let gamesPush = false;
+    if(gamesAt===0 && rgAt===0){
+      rg.forEach(g=>{ if(!games.some(x=>x.id===g.id)) games.push(g); });
+      saveJSON(GAMES_KEY, games); setGamesAt(Date.now());
+      gamesPush = true; // ثبّت الدمج والطابع في القاعدة
+    } else {
+      gamesPush = (reconcileGames(rg, rgAt) === "kept");
+    }
     const res = reconcileSession(rs, rAt);
     const pres = reconcileParked(rpk, rpkAt);
     const vres = reconcileVoice(rv, rvAt);
-    // ارفع فقط إذا كانت جلستنا/محفوظاتنا/صوتنا أحدث، أو عندنا ملفات/ألعاب لم تصل القاعدة
-    if(res === "kept" || pres === "kept" || vres === "kept" || localExtra) cloudPush();
+    // ارفع فقط إذا كانت نسختنا أحدث، أو عندنا ملفات لم تصل القاعدة
+    if(res === "kept" || pres === "kept" || vres === "kept" || profExtra || gamesPush) cloudPush();
     refreshVisible(res === "adopted");
     if(vres === "adopted" && window.refreshVoiceUI) window.refreshVoiceUI();
     return;
   }
 
-  // بعد أول مزامنة: الملفات والألعاب من القاعدة مباشرة
-  profiles = rp; games = rg;
-  saveJSON(PROF_KEY, profiles); saveJSON(GAMES_KEY, games);
+  // بعد أول مزامنة: الملفات من القاعدة مباشرة، والألعاب بالطابع الزمني (يثبت الحذف)
+  profiles = rp; saveJSON(PROF_KEY, profiles);
+  const gres = reconcileGames(rg, rgAt);
   const res = reconcileSession(rs, rAt);
   const pres = reconcileParked(rpk, rpkAt);
   const vres = reconcileVoice(rv, rvAt);
-  if(res === "kept" || pres === "kept" || vres === "kept") cloudPush();  // نسختنا أحدث → أعد تأكيدها
+  if(res === "kept" || pres === "kept" || vres === "kept" || gres === "kept") cloudPush();  // نسختنا أحدث → أعد تأكيدها
   refreshVisible(res === "adopted");
   if(vres === "adopted" && window.refreshVoiceUI) window.refreshVoiceUI();
 }
@@ -1847,7 +1878,8 @@ function renderTotals(){
     if(p.out){
       tr.innerHTML = `<td class="name" style="color:var(--muted)">${esc(p.name)}</td>
         <td class="total" style="color:var(--muted)">${p.total}</td>
-        <td style="color:var(--muted);font-size:12px">🚪 منسحب</td>`;
+        <td style="color:var(--muted);font-size:12px">🚪 منسحب
+          <button class="wbtn rbtn" data-i="${idx}" title="إرجاع للعبة" style="margin-right:6px">🔙 إرجاع</button></td>`;
     } else {
       const pct = Math.min(100, Math.max(0, p.total/LIMIT*100));
       const cls = p.total>=LIMIT*0.8 ? "danger" : (p.total===min ? "leader" : "");
@@ -1860,7 +1892,30 @@ function renderTotals(){
     }
     tb.appendChild(tr);
   });
-  tb.querySelectorAll(".wbtn").forEach(b=> b.onclick = ()=> withdrawPlayer(+b.dataset.i));
+  tb.querySelectorAll(".wbtn:not(.rbtn)").forEach(b=> b.onclick = ()=> withdrawPlayer(+b.dataset.i));
+  tb.querySelectorAll(".rbtn").forEach(b=> b.onclick = ()=> returnPlayer(+b.dataset.i));
+}
+
+// إرجاع لاعب منسحب — بخيار: نقاطه السابقة أو نقاط الأخير الحالي
+function returnPlayer(idx){
+  const p = state.players[idx];
+  if(!p || !p.out) return;
+  const prev = p.total; // نقاطه المجمّدة وقت الانسحاب = base + مجموع دلتاته
+  const activeTotals = state.players.filter(x=>!x.out).map(x=>x.total);
+  const lastActive = activeTotals.length ? Math.max(...activeTotals) : 0;
+  const choice = prompt(
+    `إرجاع «${p.name}» للعبة — اكتب رقم الخيار:\n\n` +
+    `1 = بنفس نقاطه السابقة (${prev})\n` +
+    `2 = بنقاط الأخير الحالي (${lastActive})`, "2");
+  if(choice===null) return;
+  const c = choice.trim();
+  if(c!=="1" && c!=="2"){ alert("اكتب 1 أو 2 فقط"); return; }
+  const target = (c==="2") ? lastActive : prev;
+  // اضبط الرصيد الأساسي بحيث يعطي إعادة الحساب النتيجة المطلوبة (prev = base + مجموع الدلتا)
+  const sumDeltas = prev - (p.base||0);
+  p.base = target - sumDeltas;
+  p.out = false;
+  finishApply(); // يعيد الحساب ويحدّد النهاية إن وصل أحد ٢٠٠٠
 }
 
 // انسحاب لاعب من اللعبة القائمة — يتوقف تسجيله، وعند النهاية يُحسب أخيراً
