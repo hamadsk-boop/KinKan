@@ -196,7 +196,7 @@
     <h1>🂡 كنكان</h1>
     <p>إدارة جلسة الاستراحة — التسجيل حتى ٢٠٠٠</p>
     <p id="dbStatus" style="font-size:12px;color:var(--muted);margin-top:6px;">⏳ جاري الاتصال بقاعدة البيانات…</p>
-    <p style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٧</p>
+    <p id="verTag" style="font-size:10.5px;color:var(--muted);margin-top:3px;opacity:.6;">الإصدار ٢٨</p>
   </header>
 
   <!-- ========== شاشة الإعداد ========== -->
@@ -339,6 +339,13 @@
     <div class="card">
       <h2 class="hrow"><span>⚙️ الإعدادات</span>
         <span><button class="btn-back" id="settingsBack">→ رجوع</button></span></h2>
+    </div>
+
+    <div class="card">
+      <h2>🔄 إصدار التطبيق</h2>
+      <p class="subnote" style="text-align:right;">النسخة الحالية على هذا الجهاز: <b id="verNow">—</b>.
+      لو ما وصلك آخر تحديث، اضغط الزر — يمسح النسخة المخزّنة ويجلب الأحدث فوراً. بياناتك محفوظة في السحابة ولا تتأثر.</p>
+      <button class="btn btn-ghost" id="forceUpdateBtn">⬇️ جلب آخر إصدار الآن</button>
     </div>
 
     <div class="card">
@@ -2198,7 +2205,9 @@ initCloud();
 // حماية التخزين + التطبيق القابل للتثبيت
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 if("serviceWorker" in navigator && location.protocol!=="file:"){
-  navigator.serviceWorker.register("sw.js").then(reg=>{
+  // updateViaCache:"none" — لا تجلب ملف العامل نفسه من كاش المتصفح،
+  // وإلا قد لا يكتشف المتصفح النسخة الجديدة ويظل على القديمة.
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg=>{
     reg.update();
     // عند تفعيل نسخة جديدة من العامل، أعد التحميل مرة واحدة لعرض التحديث فوراً
     let reloaded = false;
@@ -2211,8 +2220,31 @@ if("serviceWorker" in navigator && location.protocol!=="file:"){
         if(nw.state==="installed" && navigator.serviceWorker.controller) nw.postMessage&&nw.postMessage("skip");
       });
     });
+    // التطبيق يبقى مفتوحاً طويلاً على الجوال — افحص التحديثات عند كل رجوع إليه
+    document.addEventListener("visibilitychange", ()=>{
+      if(!document.hidden) reg.update().catch(()=>{});
+    });
   }).catch(()=>{});
 }
+
+// مخرج طوارئ: يمسح العامل والكاش ويجلب آخر إصدار فوراً (البيانات محفوظة ولا تتأثر)
+async function forceUpdateApp(){
+  if(!confirm("جلب آخر إصدار الآن؟\nبياناتك (اللاعبون والألعاب والجلسة) محفوظة في السحابة ولن تتأثر.")) return;
+  try{
+    if("serviceWorker" in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister().catch(()=>{})));
+    }
+    if(window.caches){
+      const ks = await caches.keys();
+      await Promise.all(ks.map(k=>caches.delete(k).catch(()=>{})));
+    }
+  }catch(e){}
+  // رابط جديد بكل مرة — يتجاوز ذاكرة المتصفح المؤقتة لملف الصفحة أيضاً
+  location.replace(location.pathname + "?v=" + Date.now());
+}
+if($("forceUpdateBtn")) $("forceUpdateBtn").onclick = forceUpdateApp;
+if($("verNow") && $("verTag")) $("verNow").textContent = $("verTag").textContent;
 </script>
 </body>
 </html>
